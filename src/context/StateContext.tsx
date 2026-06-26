@@ -1,5 +1,8 @@
 /* eslint-disable react-refresh/only-export-components */
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface Provider {
   id: string;
@@ -72,6 +75,8 @@ export interface User {
   status: 'Active' | 'Pending';
 }
 
+// ─── Pricing lookup (no mock data — used only for cost calculations) ──────────
+
 export const PROVIDER_PRICING: Record<string, Record<string, { input: number; output: number }>> = {
   openai: {
     'gpt-4o': { input: 5.00, output: 15.00 },
@@ -96,45 +101,140 @@ export const PROVIDER_PRICING: Record<string, Record<string, { input: number; ou
   }
 };
 
-const DEFAULT_STATE = {
-  providers: [
-    { id: 'openai', name: 'OpenAI', status: 'connected' as const, apiKey: 'sk-proj-••••••••••••••••', models: ['gpt-4o', 'gpt-3.5-turbo'] },
-    { id: 'anthropic', name: 'Anthropic', status: 'connected' as const, apiKey: 'sk-ant-••••••••••••••••', models: ['claude-3-5-sonnet', 'claude-3-haiku'] },
-    { id: 'gemini', name: 'Gemini', status: 'connected' as const, apiKey: 'AIzaSy••••••••••••••••', models: ['gemini-1.5-flash', 'gemini-1.5-pro'] },
-    { id: 'azure-openai', name: 'Azure OpenAI', status: 'disconnected' as const, apiKey: '', models: ['gpt-4-azure'] },
-    { id: 'aws-bedrock', name: 'AWS Bedrock', status: 'disconnected' as const, apiKey: '', models: ['claude-3-sonnet-bedrock'] },
-    { id: 'local', name: 'Local Inference', status: 'connected' as const, apiKey: 'local-key', models: ['llama-3-local'] }
-  ],
-  requests: [] as TelemetryRequest[],
-  policies: [
-    { id: 'pol-pii', name: 'PII Protection (Anti-leakage)', description: 'Scan prompt text for SSN, credit cards, or emails. Flag and mask or block.', type: 'data_leakage', active: true, action: 'block' as const },
-    { id: 'pol-models', name: 'Approved Model Guardrails', description: 'Restrict production environments from using non-approved or premium cost models.', type: 'model_restriction', active: true, action: 'flag' as const },
-    { id: 'pol-residency', name: 'Data Residency Standard', description: 'Ensure customer data does not leave US region.', type: 'residency', active: false, action: 'flag' as const }
-  ],
-  budgets: {
-    'Engineering': { limit: 25000, spent: 0 },
-    'Customer Success': { limit: 15000, spent: 0 },
-    'Marketing': { limit: 10000, spent: 0 },
-    'Product Design': { limit: 8000, spent: 0 },
-    'Research': { limit: 5000, spent: 0 }
-  } as Record<string, Budget>,
-  recommendations: [
-    { id: 'rec-001', title: 'Transition Support Chatbot to Gemini 1.5 Flash', category: 'cost', suggestion: 'The Support Chatbot workflow is currently running on Claude 3.5 Sonnet. Over 90% of requests are basic classification tasks. Transitioning to Gemini 1.5 Flash will reduce cost by ~85%.', savings: 4500, confidence: 92, status: 'active' as const, evidence: '90% of requests have < 3 sentences and output simple classification tags.' },
-    { id: 'rec-002', title: 'Configure rate-limiting on ContentGen-Agent keys', category: 'governance', suggestion: 'The Marketing ContentGen-Agent generated 42% cost growth this week due to an infinite-loop bug in review code.', savings: 1200, confidence: 98, status: 'active' as const, evidence: 'Marketing team API key generated 150 requests/min between 2:00 AM and 4:00 AM on Sunday.' },
-    { id: 'rec-003', title: 'Enable Local Llama-3 for draft reviews', category: 'optimization', suggestion: 'Engineering CI/CD review workflows are using GPT-4o for draft-stage reviews. Moving draft reviews to a local Llama-3 server is free.', savings: 1800, confidence: 88, status: 'active' as const, evidence: 'Draft review tasks do not require premium model capabilities.' }
-  ] as Recommendation[],
-  outcomes: [
-    { id: 'w-cs', workflow: 'Support Chatbot', department: 'Customer Success', metricName: 'Zendesk Tickets Resolved', volume: 15400, costPerOutcome: 0.42, roiScore: 'High' as const, necessity: 'AI Essential' as const },
-    { id: 'w-eng', workflow: 'CI/CD Review', department: 'Engineering', metricName: 'PRs Reviewed', volume: 8500, costPerOutcome: 0.15, roiScore: 'Medium' as const, necessity: 'AI Recommended' as const },
-    { id: 'w-mkt', workflow: 'Campaign Gen', department: 'Marketing', metricName: 'Campaign Drafts Generated', volume: 1200, costPerOutcome: 0.35, roiScore: 'Low' as const, necessity: 'Rule-Based Preferred' as const },
-    { id: 'w-res', workflow: 'Paper Analysis', department: 'Research', metricName: 'Papers Processed', volume: 450, costPerOutcome: 0.00, roiScore: 'High' as const, necessity: 'Hybrid' as const }
-  ] as Outcome[],
-  users: [
-    { id: 'u1', name: 'Sarah Jenkins', email: 'sarah.jenkins@peek.ai', role: 'Super Admin', status: 'Active' as const },
-    { id: 'u2', name: 'James Carter', email: 'j.carter@peek.ai', role: 'Governance Manager', status: 'Active' as const },
-    { id: 'u3', name: 'Elena Rostova', email: 'e.rostova@peek.ai', role: 'Viewer', status: 'Active' as const }
-  ] as User[]
-};
+// ─── Seed data — only used when tables are empty (runs once per fresh DB) ─────
+
+const SEED_PROVIDERS: Provider[] = [
+  { id: 'openai',      name: 'OpenAI',           status: 'connected',    apiKey: 'sk-proj-••••••••••••••••', models: ['gpt-4o', 'gpt-3.5-turbo'] },
+  { id: 'anthropic',   name: 'Anthropic',         status: 'connected',    apiKey: 'sk-ant-••••••••••••••••',  models: ['claude-3-5-sonnet', 'claude-3-haiku'] },
+  { id: 'gemini',      name: 'Gemini',            status: 'connected',    apiKey: 'AIzaSy••••••••••••••••',   models: ['gemini-1.5-flash', 'gemini-1.5-pro'] },
+  { id: 'azure-openai',name: 'Azure OpenAI',      status: 'disconnected', apiKey: '',                         models: ['gpt-4-azure'] },
+  { id: 'aws-bedrock', name: 'AWS Bedrock',       status: 'disconnected', apiKey: '',                         models: ['claude-3-sonnet-bedrock'] },
+  { id: 'local',       name: 'Local Inference',   status: 'connected',    apiKey: 'local-key',                models: ['llama-3-local'] }
+];
+
+const SEED_POLICIES: Policy[] = [
+  { id: 'pol-pii',      name: 'PII Protection (Anti-leakage)',  description: 'Scan prompt text for SSN, credit cards, or emails. Flag and mask or block.', type: 'data_leakage',      active: true,  action: 'block' },
+  { id: 'pol-models',   name: 'Approved Model Guardrails',      description: 'Restrict production environments from using non-approved or premium cost models.', type: 'model_restriction', active: true,  action: 'flag'  },
+  { id: 'pol-residency',name: 'Data Residency Standard',        description: 'Ensure customer data does not leave US region.', type: 'residency', active: false, action: 'flag'  }
+];
+
+const SEED_BUDGETS = [
+  { team: 'Engineering',     limit_amount: 25000, spent: 0 },
+  { team: 'Customer Success', limit_amount: 15000, spent: 0 },
+  { team: 'Marketing',       limit_amount: 10000, spent: 0 },
+  { team: 'Product Design',  limit_amount: 8000,  spent: 0 },
+  { team: 'Research',        limit_amount: 5000,  spent: 0 }
+];
+
+const SEED_RECOMMENDATIONS: Recommendation[] = [
+  { id: 'rec-001', title: 'Transition Support Chatbot to Gemini 1.5 Flash', category: 'cost', suggestion: 'The Support Chatbot workflow is currently running on Claude 3.5 Sonnet. Over 90% of requests are basic classification tasks. Transitioning to Gemini 1.5 Flash will reduce cost by ~85%.', savings: 4500, confidence: 92, status: 'active', evidence: '90% of requests have < 3 sentences and output simple classification tags.' },
+  { id: 'rec-002', title: 'Configure rate-limiting on ContentGen-Agent keys', category: 'governance', suggestion: 'The Marketing ContentGen-Agent generated 42% cost growth this week due to an infinite-loop bug in review code.', savings: 1200, confidence: 98, status: 'active', evidence: 'Marketing team API key generated 150 requests/min between 2:00 AM and 4:00 AM on Sunday.' },
+  { id: 'rec-003', title: 'Enable Local Llama-3 for draft reviews', category: 'optimization', suggestion: 'Engineering CI/CD review workflows are using GPT-4o for draft-stage reviews. Moving draft reviews to a local Llama-3 server is free.', savings: 1800, confidence: 88, status: 'active', evidence: 'Draft review tasks do not require premium model capabilities.' }
+];
+
+const SEED_OUTCOMES = [
+  { id: 'w-cs',  workflow: 'Support Chatbot', department: 'Customer Success', metric_name: 'Zendesk Tickets Resolved',  volume: 15400, cost_per_outcome: 0.42, roi_score: 'High',   necessity: 'AI Essential'           },
+  { id: 'w-eng', workflow: 'CI/CD Review',    department: 'Engineering',      metric_name: 'PRs Reviewed',              volume: 8500,  cost_per_outcome: 0.15, roi_score: 'Medium', necessity: 'AI Recommended'         },
+  { id: 'w-mkt', workflow: 'Campaign Gen',    department: 'Marketing',        metric_name: 'Campaign Drafts Generated', volume: 1200,  cost_per_outcome: 0.35, roi_score: 'Low',    necessity: 'Rule-Based Preferred'   },
+  { id: 'w-res', workflow: 'Paper Analysis',  department: 'Research',         metric_name: 'Papers Processed',          volume: 450,   cost_per_outcome: 0.00, roi_score: 'High',   necessity: 'Hybrid'                 }
+];
+
+const SEED_USERS: User[] = [
+  { id: 'u1', name: 'Sarah Jenkins', email: 'sarah.jenkins@peek.ai', role: 'Super Admin',        status: 'Active' },
+  { id: 'u2', name: 'James Carter',  email: 'j.carter@peek.ai',      role: 'Governance Manager', status: 'Active' },
+  { id: 'u3', name: 'Elena Rostova', email: 'e.rostova@peek.ai',     role: 'Viewer',             status: 'Active' }
+];
+
+// ─── Telemetry seeder — generates demo requests using providers from DB ───────
+
+function generateSeedRequests(dbProviders: Provider[]): { requests: TelemetryRequest[]; budgetSpend: Record<string, number> } {
+  const days = 30;
+  const teams = ['Engineering', 'Customer Success', 'Marketing', 'Product Design', 'Research'];
+  const departments: Record<string, string> = {
+    'Engineering': 'R&D', 'Customer Success': 'Operations',
+    'Marketing': 'GTM', 'Product Design': 'R&D', 'Research': 'R&D'
+  };
+  const workflows: Record<string, string[]> = {
+    'Engineering': ['CI/CD Review', 'Code Autocomplete', 'Doc Synthesis'],
+    'Customer Success': ['Email Triage', 'Support Chatbot', 'FAQ Search'],
+    'Marketing': ['Campaign Gen', 'Copywriting Drafts', 'SEO Tagging'],
+    'Product Design': ['UI Layout Copy', 'Design Reviews'],
+    'Research': ['Paper Analysis', 'Literature Review']
+  };
+  const customers = ['Alphabet Corp', 'Stripe Inc', 'Vercel Group', 'None'];
+  const connectedProviders = dbProviders.filter(p => p.status === 'connected');
+  if (connectedProviders.length === 0) return { requests: [], budgetSpend: {} };
+
+  const newRequests: TelemetryRequest[] = [];
+  const budgetSpend: Record<string, number> = {};
+  const now = Date.now();
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const totalRequests = days * 30;
+
+  for (let i = 0; i < totalRequests; i++) {
+    const timestamp = now - Math.random() * days * msPerDay;
+    const team = teams[Math.floor(Math.random() * teams.length)];
+    const department = departments[team];
+    const workflow = workflows[team][Math.floor(Math.random() * workflows[team].length)];
+    const prov = connectedProviders[Math.floor(Math.random() * connectedProviders.length)];
+    const model = prov.models[Math.floor(Math.random() * prov.models.length)];
+    const tokensIn = Math.floor(Math.random() * 5000) + 100;
+    const tokensOut = Math.floor(Math.random() * 2000) + 50;
+    const rates = PROVIDER_PRICING[prov.id]?.[model] || { input: 0, output: 0 };
+    const cost = parseFloat((((tokensIn * rates.input) + (tokensOut * rates.output)) / 1_000_000).toFixed(6));
+    let baseLatency = 0.5;
+    if (model.includes('flash') || model.includes('haiku') || model.includes('3.5-turbo') || model.includes('local')) baseLatency = 0.15;
+    else if (model.includes('pro') || model.includes('gpt-4o') || model.includes('sonnet')) baseLatency = 1.6;
+    const latency = parseFloat((baseLatency + Math.random() * 1.2).toFixed(2));
+    let status = 'Optimal';
+    const violatesPII = Math.random() < 0.02;
+    const violatesModel = model === 'gpt-4o' && team === 'Marketing' && Math.random() < 0.05;
+    if (violatesPII) status = 'PII Leak Flagged';
+    else if (violatesModel) status = 'Policy Flagged';
+    else if (cost > 0.05) status = 'High Cost';
+    const prompt = violatesPII
+      ? `Retrieve user email user_id_33@gmail.com and process credit card 4111-2222-3333-4444...`
+      : `Process workflow tasks for ${workflow}`;
+    newRequests.push({
+      id: 'req-' + Math.random().toString(36).substring(2, 11),
+      provider: prov.id, model, tokens_in: tokensIn, tokens_out: tokensOut,
+      cost, latency, timestamp, team,
+      project: 'Project-' + ['Phoenix', 'Sentinel', 'Keystone', 'Nebula'][Math.floor(Math.random() * 4)],
+      department, workflow, customer: customers[Math.floor(Math.random() * customers.length)],
+      prompt, response: `Simulated response from ${model}. Processed ${tokensIn + tokensOut} tokens in ${latency}s.`, status
+    });
+    budgetSpend[team] = (budgetSpend[team] || 0) + cost;
+  }
+  newRequests.sort((a, b) => a.timestamp - b.timestamp);
+  return { requests: newRequests, budgetSpend };
+}
+
+// ─── Helper: map provider row from DB ────────────────────────────────────────
+
+function mapProvider(p: Record<string, unknown>): Provider {
+  return {
+    id: p.id as string,
+    name: p.name as string,
+    status: (p.status as string) as 'connected' | 'disconnected',
+    apiKey: (p.api_key as string) || '',
+    models: (p.models as string[]) || []
+  };
+}
+
+function mapOutcome(o: Record<string, unknown>): Outcome {
+  return {
+    id: o.id as string,
+    workflow: o.workflow as string,
+    department: o.department as string,
+    metricName: o.metric_name as string,
+    volume: o.volume as number,
+    costPerOutcome: Number(o.cost_per_outcome),
+    roiScore: o.roi_score as 'High' | 'Medium' | 'Low',
+    necessity: o.necessity as Outcome['necessity']
+  };
+}
+
+// ─── Context type ─────────────────────────────────────────────────────────────
 
 interface StateContextType {
   providers: Provider[];
@@ -144,455 +244,515 @@ interface StateContextType {
   recommendations: Recommendation[];
   outcomes: Outcome[];
   users: User[];
-  updateBudgetLimit: (team: string, limit: number) => void;
-  togglePolicy: (id: string) => void;
-  addPolicy: (name: string, description: string, type: string, action: 'block' | 'flag') => void;
-  applyRecommendation: (id: string) => void;
-  dismissRecommendation: (id: string) => void;
-  toggleProvider: (id: string, apiKey?: string) => void;
-  inviteUser: (name: string, email: string, role: string) => void;
-  deleteUser: (id: string) => void;
-  updateUserRole: (id: string, role: string) => void;
+  loading: boolean;
+  error: string | null;
+  updateBudgetLimit: (team: string, limit: number) => Promise<void>;
+  togglePolicy: (id: string) => Promise<void>;
+  addPolicy: (name: string, description: string, type: string, action: 'block' | 'flag') => Promise<void>;
+  applyRecommendation: (id: string) => Promise<void>;
+  dismissRecommendation: (id: string) => Promise<void>;
+  toggleProvider: (id: string, apiKey?: string) => Promise<void>;
+  inviteUser: (name: string, email: string, role: string) => Promise<void>;
+  deleteUser: (id: string) => Promise<void>;
+  updateUserRole: (id: string, role: string) => Promise<void>;
   routeGatewayRequest: (
-    prompt: string,
-    provider: string,
-    model: string,
-    team: string,
-    environment: string,
-    workflow: string,
-    customer: string
-  ) => { success: boolean; trace: string[]; cost: number; tokens: number; latency: number };
-  resetSystemState: () => void;
-}
-
-type PersistedState = {
-  providers: Provider[];
-  requests: TelemetryRequest[];
-  policies: Policy[];
-  budgets: Record<string, Budget>;
-  recommendations: Recommendation[];
-  outcomes: Outcome[];
-  users: User[];
-};
-
-function generateFreshTelemetryData(): PersistedState {
-  const days = 30;
-  const teams = ['Engineering', 'Customer Success', 'Marketing', 'Product Design', 'Research'];
-  const departments: Record<string, string> = {
-    'Engineering': 'R&D',
-    'Customer Success': 'Operations',
-    'Marketing': 'GTM',
-    'Product Design': 'R&D',
-    'Research': 'R&D'
-  };
-  const workflows: Record<string, string[]> = {
-    'Engineering': ['CI/CD Review', 'Code Autocomplete', 'Doc Synthesis'],
-    'Customer Success': ['Email Triage', 'Support Chatbot', 'FAQ Search'],
-    'Marketing': ['Campaign Gen', 'Copywriting Drafts', 'SEO Tagging'],
-    'Product Design': ['UI Layout Copy', 'Design Reviews'],
-    'Research': ['Paper Analysis', 'Literature Review']
-  };
-  const providerList = ['openai', 'anthropic', 'gemini', 'local'];
-  const providerModels: Record<string, string[]> = {
-    'openai': ['gpt-4o', 'gpt-3.5-turbo'],
-    'anthropic': ['claude-3-5-sonnet', 'claude-3-haiku'],
-    'gemini': ['gemini-1.5-flash', 'gemini-1.5-pro'],
-    'local': ['llama-3-local']
-  };
-  const customers = ['Alphabet Corp', 'Stripe Inc', 'Vercel Group', 'None'];
-
-  const newRequests: TelemetryRequest[] = [];
-  const now = Date.now();
-  const msPerDay = 24 * 60 * 60 * 1000;
-  const totalRequests = days * 30;
-
-  const freshBudgets = JSON.parse(JSON.stringify(DEFAULT_STATE.budgets)) as Record<string, Budget>;
-
-  for (let i = 0; i < totalRequests; i++) {
-    const timeOffset = Math.random() * days * msPerDay;
-    const timestamp = now - timeOffset;
-
-    const team = teams[Math.floor(Math.random() * teams.length)];
-    const department = departments[team];
-    const workflowList = workflows[team];
-    const workflow = workflowList[Math.floor(Math.random() * workflowList.length)];
-
-    const provider = providerList[Math.floor(Math.random() * providerList.length)];
-    const models = providerModels[provider];
-    const model = models[Math.floor(Math.random() * models.length)];
-
-    const tokensIn = Math.floor(Math.random() * 5000) + 100;
-    const tokensOut = Math.floor(Math.random() * 2000) + 50;
-
-    const rates = PROVIDER_PRICING[provider][model] || { input: 0, output: 0 };
-    const cost = ((tokensIn * rates.input) + (tokensOut * rates.output)) / 1000000;
-
-    let baseLatency = 0.5;
-    if (model.includes('flash') || model.includes('haiku') || model.includes('3.5-turbo') || model.includes('local')) {
-      baseLatency = 0.15;
-    } else if (model.includes('pro') || model.includes('gpt-4o') || model.includes('sonnet')) {
-      baseLatency = 1.6;
-    }
-    const latency = baseLatency + (Math.random() * 1.2);
-
-    let status = 'Optimal';
-    const violatesPII = Math.random() < 0.02;
-    const violatesModel = model === 'gpt-4o' && team === 'Marketing' && Math.random() < 0.05;
-
-    if (violatesPII) {
-      status = 'PII Leak Flagged';
-    } else if (violatesModel) {
-      status = 'Policy Flagged';
-    } else if (cost > 0.05) {
-      status = 'High Cost';
-    }
-
-    const promptSample = violatesPII
-      ? `Retrieve user email user_id_33@gmail.com and process credit card 4111-2222-3333-4444...`
-      : `Process workflow tasks for ${workflow}`;
-
-    newRequests.push({
-      id: 'req-' + Math.random().toString(36).substring(2, 11),
-      provider,
-      model,
-      tokens_in: tokensIn,
-      tokens_out: tokensOut,
-      cost: parseFloat(cost.toFixed(6)),
-      latency: parseFloat(latency.toFixed(2)),
-      timestamp,
-      team,
-      project: 'Project-' + ['Phoenix', 'Sentinel', 'Keystone', 'Nebula'][Math.floor(Math.random() * 4)],
-      department,
-      workflow,
-      customer: customers[Math.floor(Math.random() * customers.length)],
-      prompt: promptSample,
-      response: `Simulated response text matching parameters for model ${model}. Processed ${tokensIn + tokensOut} tokens in ${latency.toFixed(2)}s.`,
-      status
-    });
-
-    if (freshBudgets[team]) {
-      freshBudgets[team].spent += cost;
-    }
-  }
-
-  newRequests.sort((a, b) => a.timestamp - b.timestamp);
-
-  return {
-    providers: DEFAULT_STATE.providers,
-    requests: newRequests,
-    policies: DEFAULT_STATE.policies,
-    budgets: freshBudgets,
-    recommendations: DEFAULT_STATE.recommendations,
-    outcomes: DEFAULT_STATE.outcomes,
-    users: DEFAULT_STATE.users,
-  };
-}
-
-let cachedInitialState: PersistedState | undefined;
-
-function getInitialState(): PersistedState {
-  if (cachedInitialState) return cachedInitialState;
-
-  const raw = localStorage.getItem('peek_state');
-  if (raw) {
-    try {
-      const parsed = JSON.parse(raw) as Partial<PersistedState>;
-      if (parsed.requests && parsed.requests.length > 0) {
-        cachedInitialState = {
-          providers: parsed.providers || DEFAULT_STATE.providers,
-          requests: parsed.requests,
-          policies: parsed.policies || DEFAULT_STATE.policies,
-          budgets: parsed.budgets || DEFAULT_STATE.budgets,
-          recommendations: parsed.recommendations || DEFAULT_STATE.recommendations,
-          outcomes: parsed.outcomes || DEFAULT_STATE.outcomes,
-          users: parsed.users || DEFAULT_STATE.users,
-        };
-        return cachedInitialState;
-      }
-    } catch {
-      console.error('Error parsing peek_state, generating fresh state');
-    }
-  }
-
-  cachedInitialState = generateFreshTelemetryData();
-  localStorage.setItem('peek_state', JSON.stringify(cachedInitialState));
-  return cachedInitialState;
+    prompt: string, provider: string, model: string,
+    team: string, environment: string, workflow: string, customer: string
+  ) => Promise<{ success: boolean; trace: string[]; cost: number; tokens: number; latency: number }>;
+  resetSystemState: () => Promise<void>;
 }
 
 const StateContext = createContext<StateContextType | undefined>(undefined);
 
+// ─── Provider ─────────────────────────────────────────────────────────────────
+
 export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [providers, setProviders] = useState<Provider[]>(() => getInitialState().providers);
-  const [requests, setRequests] = useState<TelemetryRequest[]>(() => getInitialState().requests);
-  const [policies, setPolicies] = useState<Policy[]>(() => getInitialState().policies);
-  const [budgets, setBudgets] = useState<Record<string, Budget>>(() => getInitialState().budgets);
-  const [recommendations, setRecommendations] = useState<Recommendation[]>(() => getInitialState().recommendations);
-  const [outcomes, setOutcomes] = useState<Outcome[]>(() => getInitialState().outcomes);
-  const [users, setUsers] = useState<User[]>(() => getInitialState().users);
+  const [providers, setProviders] = useState<Provider[]>([]);
+  const [requests, setRequests] = useState<TelemetryRequest[]>([]);
+  const [policies, setPolicies] = useState<Policy[]>([]);
+  const [budgets, setBudgets] = useState<Record<string, Budget>>({});
+  const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
+  const [outcomes, setOutcomes] = useState<Outcome[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const saveToStorage = (updatedState: Partial<typeof DEFAULT_STATE> & { budgets: Record<string, Budget> }) => {
-    localStorage.setItem('peek_state', JSON.stringify({
-      providers: updatedState.providers || providers,
-      requests: updatedState.requests || requests,
-      policies: updatedState.policies || policies,
-      budgets: updatedState.budgets || budgets,
-      recommendations: updatedState.recommendations || recommendations,
-      outcomes: updatedState.outcomes || outcomes,
-      users: updatedState.users || users,
-    }));
-  };
+  // ─── 1. Initial load from Supabase + seed empty tables ─────────────────────
 
-  const generateFreshTelemetry = () => {
-    const fresh = generateFreshTelemetryData();
-    cachedInitialState = fresh;
-    setProviders(fresh.providers);
-    setRequests(fresh.requests);
-    setPolicies(fresh.policies);
-    setBudgets(fresh.budgets);
-    setRecommendations(fresh.recommendations);
-    setOutcomes(fresh.outcomes);
-    setUsers(fresh.users);
-    localStorage.setItem('peek_state', JSON.stringify(fresh));
-  };
+  useEffect(() => {
+    const loadState = async () => {
+      try {
+        setLoading(true);
+        setError(null);
 
-  const updateBudgetLimit = (team: string, limit: number) => {
-    const updated = {
-      ...budgets,
-      [team]: { ...budgets[team], limit }
+        const [
+          { data: pData,   error: pErr   },
+          { data: rData,   error: rErr   },
+          { data: polData, error: polErr },
+          { data: bData,   error: bErr   },
+          { data: recData, error: recErr },
+          { data: oData,   error: oErr   },
+          { data: uData,   error: uErr   }
+        ] = await Promise.all([
+          supabase.from('providers').select('*'),
+          supabase.from('requests').select('*').order('timestamp', { ascending: true }),
+          supabase.from('policies').select('*'),
+          supabase.from('budgets').select('*'),
+          supabase.from('recommendations').select('*'),
+          supabase.from('outcomes').select('*'),
+          supabase.from('users').select('*')
+        ]);
+
+        // Surface any critical DB error
+        const criticalError = pErr || polErr || bErr;
+        if (criticalError) {
+          throw new Error(`Database connection failed: ${criticalError.message}`);
+        }
+        if (rErr) console.warn('requests fetch warning:', rErr.message);
+        if (recErr) console.warn('recommendations fetch warning:', recErr.message);
+        if (oErr) console.warn('outcomes fetch warning:', oErr.message);
+        if (uErr) console.warn('users fetch warning:', uErr.message);
+
+        // ── Seed providers if empty ──────────────────────────────────────────
+        let liveProviders: Provider[] = (pData || []).map(p => mapProvider(p as Record<string, unknown>));
+        if (liveProviders.length === 0) {
+          const { data: seeded, error: seedPErr } = await supabase
+            .from('providers')
+            .insert(SEED_PROVIDERS.map(p => ({ id: p.id, name: p.name, status: p.status, api_key: p.apiKey, models: p.models })))
+            .select();
+          if (seedPErr) console.warn('Provider seed error:', seedPErr.message);
+          liveProviders = (seeded || SEED_PROVIDERS).map(p => mapProvider(p as Record<string, unknown>));
+        }
+        setProviders(liveProviders);
+
+        // ── Seed policies if empty ───────────────────────────────────────────
+        let livePolicies: Policy[] = (polData || []) as Policy[];
+        if (livePolicies.length === 0) {
+          const { data: seededPol, error: seedPolErr } = await supabase
+            .from('policies').insert(SEED_POLICIES).select();
+          if (seedPolErr) console.warn('Policy seed error:', seedPolErr.message);
+          livePolicies = (seededPol || SEED_POLICIES) as Policy[];
+        }
+        setPolicies(livePolicies);
+
+        // ── Seed budgets if empty ────────────────────────────────────────────
+        let liveBudgets: Record<string, Budget> = {};
+        let budgetRows = bData || [];
+        if (budgetRows.length === 0) {
+          const { data: seededB, error: seedBErr } = await supabase
+            .from('budgets').insert(SEED_BUDGETS).select();
+          if (seedBErr) console.warn('Budget seed error:', seedBErr.message);
+          budgetRows = seededB || SEED_BUDGETS;
+        }
+        budgetRows.forEach((b: Record<string, unknown>) => {
+          liveBudgets[b.team as string] = { limit: Number(b.limit_amount), spent: Number(b.spent) };
+        });
+        setBudgets(liveBudgets);
+
+        // ── Seed recommendations if empty ────────────────────────────────────
+        let liveRecs: Recommendation[] = (recData || []) as Recommendation[];
+        if (liveRecs.length === 0) {
+          const { data: seededRec, error: seedRecErr } = await supabase
+            .from('recommendations').insert(SEED_RECOMMENDATIONS).select();
+          if (seedRecErr) console.warn('Recommendations seed error:', seedRecErr.message);
+          liveRecs = (seededRec || SEED_RECOMMENDATIONS) as Recommendation[];
+        }
+        setRecommendations(liveRecs);
+
+        // ── Seed outcomes if empty ───────────────────────────────────────────
+        let liveOutcomes: Outcome[] = oData ? oData.map(o => mapOutcome(o as Record<string, unknown>)) : [];
+        if (liveOutcomes.length === 0) {
+          const { data: seededO, error: seedOErr } = await supabase
+            .from('outcomes').insert(SEED_OUTCOMES).select();
+          if (seedOErr) console.warn('Outcomes seed error:', seedOErr.message);
+          liveOutcomes = (seededO || SEED_OUTCOMES).map(o => mapOutcome(o as Record<string, unknown>));
+        }
+        setOutcomes(liveOutcomes);
+
+        // ── Seed users if empty ──────────────────────────────────────────────
+        let liveUsers: User[] = (uData || []) as User[];
+        if (liveUsers.length === 0) {
+          const { data: seededU, error: seedUErr } = await supabase
+            .from('users').insert(SEED_USERS).select();
+          if (seedUErr) console.warn('Users seed error:', seedUErr.message);
+          liveUsers = (seededU || SEED_USERS) as User[];
+        }
+        setUsers(liveUsers);
+
+        // ── Seed telemetry requests if empty (uses live providers from DB) ───
+        let liveRequests: TelemetryRequest[] = (rData || []) as TelemetryRequest[];
+        if (liveRequests.length === 0 && liveProviders.some(p => p.status === 'connected')) {
+          console.log('[Peek] Seeding historical telemetry requests into Supabase...');
+          const { requests: seedReqs, budgetSpend } = generateSeedRequests(liveProviders);
+          const batchSize = 300;
+          for (let i = 0; i < seedReqs.length; i += batchSize) {
+            const { error: insErr } = await supabase.from('requests').insert(seedReqs.slice(i, i + batchSize));
+            if (insErr) console.warn('Request batch seed error:', insErr.message);
+          }
+          // Update budget spend totals
+          for (const team in budgetSpend) {
+            const newSpent = (liveBudgets[team]?.spent || 0) + budgetSpend[team];
+            await supabase.from('budgets').update({ spent: newSpent }).eq('team', team);
+            liveBudgets = { ...liveBudgets, [team]: { ...liveBudgets[team], spent: newSpent } };
+          }
+          setBudgets({ ...liveBudgets });
+          liveRequests = seedReqs;
+        }
+        setRequests(liveRequests);
+
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unknown database error';
+        console.error('[Peek] Fatal load error:', msg);
+        setError(msg);
+      } finally {
+        setLoading(false);
+      }
     };
-    setBudgets(updated);
-    saveToStorage({ budgets: updated });
+
+    loadState();
+  }, []);
+
+  // ─── 2. Realtime subscriptions for ALL tables ───────────────────────────────
+
+  useEffect(() => {
+    // Requests — INSERT only (they're append-only)
+    const requestsCh = supabase
+      .channel('rt-requests')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'requests' }, (payload) => {
+        const r = payload.new as TelemetryRequest;
+        setRequests(prev => prev.some(x => x.id === r.id) ? prev : [...prev, r]);
+      })
+      .subscribe();
+
+    // Budgets — UPDATE
+    const budgetsCh = supabase
+      .channel('rt-budgets')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'budgets' }, (payload) => {
+        const b = payload.new as { team: string; limit_amount: number; spent: number };
+        setBudgets(prev => ({ ...prev, [b.team]: { limit: Number(b.limit_amount), spent: Number(b.spent) } }));
+      })
+      .subscribe();
+
+    // Policies — INSERT + UPDATE
+    const policiesCh = supabase
+      .channel('rt-policies')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'policies' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          const p = payload.new as Policy;
+          setPolicies(prev => prev.some(x => x.id === p.id) ? prev : [...prev, p]);
+        } else if (payload.eventType === 'UPDATE') {
+          const p = payload.new as Policy;
+          setPolicies(prev => prev.map(x => x.id === p.id ? p : x));
+        } else if (payload.eventType === 'DELETE') {
+          const p = payload.old as Policy;
+          setPolicies(prev => prev.filter(x => x.id !== p.id));
+        }
+      })
+      .subscribe();
+
+    // Providers — UPDATE
+    const providersCh = supabase
+      .channel('rt-providers')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'providers' }, (payload) => {
+        const p = mapProvider(payload.new as Record<string, unknown>);
+        setProviders(prev => prev.map(x => x.id === p.id ? p : x));
+      })
+      .subscribe();
+
+    // Recommendations — UPDATE
+    const recsCh = supabase
+      .channel('rt-recommendations')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'recommendations' }, (payload) => {
+        if (payload.eventType === 'UPDATE') {
+          const r = payload.new as Recommendation;
+          setRecommendations(prev => prev.map(x => x.id === r.id ? r : x));
+        } else if (payload.eventType === 'INSERT') {
+          const r = payload.new as Recommendation;
+          setRecommendations(prev => prev.some(x => x.id === r.id) ? prev : [...prev, r]);
+        }
+      })
+      .subscribe();
+
+    // Users — full CRUD
+    const usersCh = supabase
+      .channel('rt-users')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          const u = payload.new as User;
+          setUsers(prev => prev.some(x => x.id === u.id) ? prev : [...prev, u]);
+        } else if (payload.eventType === 'UPDATE') {
+          const u = payload.new as User;
+          setUsers(prev => prev.map(x => x.id === u.id ? u : x));
+        } else if (payload.eventType === 'DELETE') {
+          const u = payload.old as User;
+          setUsers(prev => prev.filter(x => x.id !== u.id));
+        }
+      })
+      .subscribe();
+
+    // Outcomes — UPDATE
+    const outcomesCh = supabase
+      .channel('rt-outcomes')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'outcomes' }, (payload) => {
+        setOutcomes(prev => prev.map(x => x.id === (payload.new as Record<string, unknown>).id
+          ? mapOutcome(payload.new as Record<string, unknown>) : x));
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(requestsCh);
+      supabase.removeChannel(budgetsCh);
+      supabase.removeChannel(policiesCh);
+      supabase.removeChannel(providersCh);
+      supabase.removeChannel(recsCh);
+      supabase.removeChannel(usersCh);
+      supabase.removeChannel(outcomesCh);
+    };
+  }, []);
+
+  // ─── CRUD Operations (optimistic + Supabase write + rollback on error) ──────
+
+  const updateBudgetLimit = async (team: string, limit: number) => {
+    const prev = budgets[team];
+    setBudgets(b => ({ ...b, [team]: { ...b[team], limit } }));
+    const { error } = await supabase.from('budgets').update({ limit_amount: limit }).eq('team', team);
+    if (error) {
+      console.error('updateBudgetLimit failed:', error.message);
+      setBudgets(b => ({ ...b, [team]: prev })); // rollback
+    }
   };
 
-  const togglePolicy = (id: string) => {
-    const updated = policies.map(p => p.id === id ? { ...p, active: !p.active } : p);
-    setPolicies(updated);
-    saveToStorage({ policies: updated, budgets });
+  const togglePolicy = async (id: string) => {
+    const policy = policies.find(p => p.id === id);
+    if (!policy) return;
+    const nextActive = !policy.active;
+    setPolicies(prev => prev.map(p => p.id === id ? { ...p, active: nextActive } : p));
+    const { error } = await supabase.from('policies').update({ active: nextActive }).eq('id', id);
+    if (error) {
+      console.error('togglePolicy failed:', error.message);
+      setPolicies(prev => prev.map(p => p.id === id ? { ...p, active: policy.active } : p)); // rollback
+    }
   };
 
-  const addPolicy = (name: string, description: string, type: string, action: 'block' | 'flag') => {
+  const addPolicy = async (name: string, description: string, type: string, action: 'block' | 'flag') => {
     const newPolicy: Policy = {
       id: 'pol-' + Math.random().toString(36).substring(2, 7),
-      name,
-      description,
-      type,
-      active: true,
-      action
+      name, description, type, active: true, action
     };
-    const updated = [...policies, newPolicy];
-    setPolicies(updated);
-    saveToStorage({ policies: updated, budgets });
+    setPolicies(prev => [...prev, newPolicy]);
+    const { error } = await supabase.from('policies').insert(newPolicy);
+    if (error) {
+      console.error('addPolicy failed:', error.message);
+      setPolicies(prev => prev.filter(p => p.id !== newPolicy.id)); // rollback
+    }
   };
 
-  const applyRecommendation = (id: string) => {
-    const updated = recommendations.map(r => r.id === id ? { ...r, status: 'applied' as const } : r);
-    setRecommendations(updated);
-    saveToStorage({ recommendations: updated, budgets });
+  const applyRecommendation = async (id: string) => {
+    const prev = recommendations.find(r => r.id === id);
+    setRecommendations(prev => prev.map(r => r.id === id ? { ...r, status: 'applied' as const } : r));
+    const { error } = await supabase.from('recommendations').update({ status: 'applied' }).eq('id', id);
+    if (error) {
+      console.error('applyRecommendation failed:', error.message);
+      if (prev) setRecommendations(recs => recs.map(r => r.id === id ? prev : r));
+    }
   };
 
-  const dismissRecommendation = (id: string) => {
-    const updated = recommendations.map(r => r.id === id ? { ...r, status: 'dismissed' as const } : r);
-    setRecommendations(updated);
-    saveToStorage({ recommendations: updated, budgets });
+  const dismissRecommendation = async (id: string) => {
+    const prev = recommendations.find(r => r.id === id);
+    setRecommendations(recs => recs.map(r => r.id === id ? { ...r, status: 'dismissed' as const } : r));
+    const { error } = await supabase.from('recommendations').update({ status: 'dismissed' }).eq('id', id);
+    if (error) {
+      console.error('dismissRecommendation failed:', error.message);
+      if (prev) setRecommendations(recs => recs.map(r => r.id === id ? prev : r));
+    }
   };
 
-  const toggleProvider = (id: string, apiKey?: string) => {
+  const toggleProvider = async (id: string, apiKey?: string) => {
+    const prevProviders = providers;
+    let nextStatus: 'connected' | 'disconnected' = 'connected';
+    let nextApiKey = '';
     const updated = providers.map(p => {
-      if (p.id === id) {
-        const nextStatus = p.status === 'connected' ? 'disconnected' as const : 'connected' as const;
-        return {
-          ...p,
-          status: nextStatus,
-          apiKey: apiKey !== undefined ? apiKey : (nextStatus === 'connected' ? 'sk-new-••••••••••••••••' : '')
-        };
-      }
-      return p;
+      if (p.id !== id) return p;
+      nextStatus = p.status === 'connected' ? 'disconnected' : 'connected';
+      nextApiKey = apiKey !== undefined ? apiKey : (nextStatus === 'connected' ? 'sk-new-••••••••••••••••' : '');
+      return { ...p, status: nextStatus, apiKey: nextApiKey };
     });
     setProviders(updated);
-    saveToStorage({ providers: updated, budgets });
+    const { error } = await supabase.from('providers').update({ status: nextStatus, api_key: nextApiKey }).eq('id', id);
+    if (error) {
+      console.error('toggleProvider failed:', error.message);
+      setProviders(prevProviders); // rollback
+    }
   };
 
-  const inviteUser = (name: string, email: string, role: string) => {
+  const inviteUser = async (name: string, email: string, role: string) => {
     const newUser: User = {
       id: 'u-' + Math.random().toString(36).substring(2, 7),
-      name,
-      email,
-      role,
-      status: 'Pending'
+      name, email, role, status: 'Pending'
     };
-    const updated = [...users, newUser];
-    setUsers(updated);
-    saveToStorage({ users: updated, budgets });
+    setUsers(prev => [...prev, newUser]);
+    const { error } = await supabase.from('users').insert(newUser);
+    if (error) {
+      console.error('inviteUser failed:', error.message);
+      setUsers(prev => prev.filter(u => u.id !== newUser.id)); // rollback
+    }
   };
 
-  const deleteUser = (id: string) => {
-    const updated = users.filter(u => u.id !== id);
-    setUsers(updated);
-    saveToStorage({ users: updated, budgets });
+  const deleteUser = async (id: string) => {
+    const prev = users;
+    setUsers(prev => prev.filter(u => u.id !== id));
+    const { error } = await supabase.from('users').delete().eq('id', id);
+    if (error) {
+      console.error('deleteUser failed:', error.message);
+      setUsers(prev); // rollback
+    }
   };
 
-  const updateUserRole = (id: string, role: string) => {
-    const updated = users.map(u => u.id === id ? { ...u, role } : u);
-    setUsers(updated);
-    saveToStorage({ users: updated, budgets });
+  const updateUserRole = async (id: string, role: string) => {
+    const prev = users.find(u => u.id === id);
+    setUsers(prev => prev.map(u => u.id === id ? { ...u, role } : u));
+    const { error } = await supabase.from('users').update({ role }).eq('id', id);
+    if (error) {
+      console.error('updateUserRole failed:', error.message);
+      if (prev) setUsers(us => us.map(u => u.id === id ? prev : u));
+    }
   };
 
-  const routeGatewayRequest = (
-    prompt: string,
-    provider: string,
-    model: string,
-    team: string,
-    environment: string,
-    workflow: string,
-    customer: string
+  // ─── Gateway simulation — logs every routed request to Supabase ─────────────
+
+  const routeGatewayRequest = async (
+    prompt: string, provider: string, model: string,
+    team: string, environment: string, workflow: string, customer: string
   ) => {
     const trace: string[] = [];
     trace.push(`[SYSTEM] Intercepted raw HTTP request routed to /v1/chat/completions`);
     trace.push(`[GATEWAY] Extracting metadata headers: Team=${team}, Env=${environment}, Workflow=${workflow}`);
 
-    // Policy 1: PII Protection
     let status = 'Optimal';
     let blockRequest = false;
     const piiPolicy = policies.find(p => p.id === 'pol-pii');
 
-    if (piiPolicy && piiPolicy.active) {
+    if (piiPolicy?.active) {
       trace.push(`[POLICY] Running '${piiPolicy.name}' scan on prompt contents...`);
       const hasEmail = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/.test(prompt);
       const hasCard = /\b(?:\d[ -]*?){13,16}\b/.test(prompt);
       const hasSSN = /\b\d{3}-\d{2}-\d{4}\b/.test(prompt);
-
       if (hasEmail || hasCard || hasSSN) {
-        trace.push(`[WARNING] PII leakage detected in payload context! Found match: ${hasEmail ? 'Email' : hasCard ? 'Credit Card Number' : 'SSN'}`);
+        trace.push(`[WARNING] PII detected: ${hasEmail ? 'Email' : hasCard ? 'Credit Card' : 'SSN'}`);
         if (piiPolicy.action === 'block') {
-          blockRequest = true;
-          status = 'PII Leak Blocked';
-          trace.push(`[BLOCK] Policy action is set to 'BLOCK'. Gateway terminating connection immediately.`);
-        } else {
-          status = 'PII Leak Flagged';
-          trace.push(`[FLAG] Policy action is set to 'FLAG'. Attributing audit logs and letting request pass.`);
-        }
-      } else {
-        trace.push(`[POLICY] PII scan passed. No sensitive patterns found.`);
-      }
+          blockRequest = true; status = 'PII Leak Blocked';
+          trace.push(`[BLOCK] Gateway terminating connection immediately.`);
+        } else { status = 'PII Leak Flagged'; trace.push(`[FLAG] Audit log updated.`); }
+      } else { trace.push(`[POLICY] PII scan passed.`); }
     }
 
-    // Policy 2: Approved Model Restriction
     const modelPolicy = policies.find(p => p.id === 'pol-models');
-    if (!blockRequest && modelPolicy && modelPolicy.active) {
+    if (!blockRequest && modelPolicy?.active) {
       trace.push(`[POLICY] Running '${modelPolicy.name}' constraints...`);
       if (model === 'gpt-4o' && team === 'Marketing') {
-        trace.push(`[WARNING] Model restriction rule violated: Marketing team is not allowed to invoke premium gpt-4o in this configuration.`);
+        trace.push(`[WARNING] Model restriction violated: Marketing → gpt-4o not permitted.`);
         if (modelPolicy.action === 'block') {
-          blockRequest = true;
-          status = 'Policy Blocked';
-          trace.push(`[BLOCK] Restricting premium model. Connection rejected.`);
-        } else {
-          status = 'Policy Flagged';
-          trace.push(`[FLAG] Policy violation flagged. Adding telemetry audit flags.`);
-        }
-      } else {
-        trace.push(`[POLICY] Approved model constraint checks completed successfully.`);
-      }
+          blockRequest = true; status = 'Policy Blocked';
+          trace.push(`[BLOCK] Connection rejected.`);
+        } else { status = 'Policy Flagged'; trace.push(`[FLAG] Violation flagged.`); }
+      } else { trace.push(`[POLICY] Model constraint checks passed.`); }
     }
 
-    // Cost calculations
-    const pricing = PROVIDER_PRICING[provider]?.[model] || { input: 0.0, output: 0.0 };
+    const pricing = PROVIDER_PRICING[provider]?.[model] || { input: 0, output: 0 };
     const tokensIn = Math.floor(prompt.length / 4) + 12;
     const tokensOut = blockRequest ? 0 : Math.floor(Math.random() * 400) + 100;
-    const calculatedCost = blockRequest ? 0 : ((tokensIn * pricing.input) + (tokensOut * pricing.output)) / 1000000;
-
+    const calculatedCost = blockRequest ? 0 : parseFloat((((tokensIn * pricing.input) + (tokensOut * pricing.output)) / 1_000_000).toFixed(6));
     let baseLatency = 0.4;
     if (model.includes('flash') || model.includes('haiku') || model.includes('local')) baseLatency = 0.15;
     else if (model.includes('pro') || model.includes('gpt-4o') || model.includes('sonnet')) baseLatency = 1.2;
-    const finalLatency = blockRequest ? 0.02 : baseLatency + (Math.random() * 0.4);
+    const finalLatency = blockRequest ? 0.02 : parseFloat((baseLatency + Math.random() * 0.4).toFixed(2));
 
     if (!blockRequest) {
-      // Check budget
       const teamBudget = budgets[team];
-      if (teamBudget) {
-        const nextSpent = teamBudget.spent + calculatedCost;
-        if (nextSpent > teamBudget.limit) {
-          trace.push(`[WARNING] Team '${team}' exceeded allocated budget limit of $${teamBudget.limit}! Current Spent: $${nextSpent.toFixed(2)}`);
-        }
+      if (teamBudget && (teamBudget.spent + calculatedCost) > teamBudget.limit) {
+        trace.push(`[WARNING] Budget limit exceeded for ${team}: $${(teamBudget.spent + calculatedCost).toFixed(2)} / $${teamBudget.limit}`);
       }
-
-      trace.push(`[ATTRIBUTION] Calculating token dimensions: input_tokens=${tokensIn}, output_tokens=${tokensOut}`);
-      trace.push(`[PROXY] Contacting downstream provider ${provider} for model ${model}...`);
-      trace.push(`[PROXY] Received response from downstream in ${finalLatency.toFixed(2)}s. Cost computed: $${calculatedCost.toFixed(5)}`);
-      trace.push(`[TELEMETRY] Logging outcome packet to Peek data lake.`);
+      trace.push(`[ATTRIBUTION] input_tokens=${tokensIn}, output_tokens=${tokensOut}`);
+      trace.push(`[PROXY] Contacting ${provider}/${model}...`);
+      trace.push(`[PROXY] Response received in ${finalLatency}s. Cost: $${calculatedCost.toFixed(5)}`);
+      trace.push(`[TELEMETRY] Logging outcome to Peek data lake.`);
     }
 
     const newRequest: TelemetryRequest = {
       id: 'req-' + Math.random().toString(36).substring(2, 11),
-      provider,
-      model,
-      tokens_in: tokensIn,
-      tokens_out: tokensOut,
-      cost: parseFloat(calculatedCost.toFixed(6)),
-      latency: parseFloat(finalLatency.toFixed(2)),
-      timestamp: Date.now(),
-      team,
-      project: 'Project-' + ['Phoenix', 'Sentinel', 'Keystone', 'Nebula'][Math.floor(Math.random() * 4)],
+      provider, model, tokens_in: tokensIn, tokens_out: tokensOut,
+      cost: calculatedCost, latency: finalLatency, timestamp: Date.now(),
+      team, project: 'Project-' + ['Phoenix', 'Sentinel', 'Keystone', 'Nebula'][Math.floor(Math.random() * 4)],
       department: team === 'Engineering' || team === 'Research' || team === 'Product Design' ? 'R&D' : (team === 'Marketing' ? 'GTM' : 'Operations'),
-      workflow,
-      customer,
-      prompt,
-      response: blockRequest 
-        ? `ERROR 403: Request blocked by Peek Enterprise AI Gateway due to security policy violations.`
-        : `Gateway routing response from ${provider}/${model}. Verified safe under policy standards. Output tokens: ${tokensOut}.`,
+      workflow, customer, prompt,
+      response: blockRequest
+        ? `ERROR 403: Request blocked by Peek Gateway.`
+        : `Gateway routing response from ${provider}/${model}. Output tokens: ${tokensOut}.`,
       status
     };
 
-    const updatedRequests = [...requests, newRequest];
-    setRequests(updatedRequests);
+    // Optimistic update
+    setRequests(prev => [...prev, newRequest]);
 
-    const updatedBudgets = { ...budgets };
-    if (!blockRequest && updatedBudgets[team]) {
-      updatedBudgets[team] = {
-        ...updatedBudgets[team],
-        spent: updatedBudgets[team].spent + calculatedCost
-      };
-      setBudgets(updatedBudgets);
+    // Write to Supabase
+    const { error: reqErr } = await supabase.from('requests').insert(newRequest);
+    if (reqErr) {
+      console.error('routeGatewayRequest insert failed:', reqErr.message);
+      setRequests(prev => prev.filter(r => r.id !== newRequest.id)); // rollback
     }
 
-    saveToStorage({
-      requests: updatedRequests,
-      budgets: updatedBudgets
-    });
+    if (!blockRequest && budgets[team]) {
+      const nextSpent = budgets[team].spent + calculatedCost;
+      setBudgets(prev => ({ ...prev, [team]: { ...prev[team], spent: nextSpent } }));
+      const { error: budErr } = await supabase.from('budgets').update({ spent: nextSpent }).eq('team', team);
+      if (budErr) console.error('routeGatewayRequest budget update failed:', budErr.message);
+    }
 
-    return {
-      success: !blockRequest,
-      trace,
-      cost: calculatedCost,
-      tokens: tokensIn + tokensOut,
-      latency: finalLatency
-    };
+    return { success: !blockRequest, trace, cost: calculatedCost, tokens: tokensIn + tokensOut, latency: finalLatency };
   };
 
-  const resetSystemState = () => {
-    generateFreshTelemetry();
+  // ─── Reset — wipe requests, re-seed from scratch ────────────────────────────
+
+  const resetSystemState = async () => {
+    try {
+      setLoading(true);
+      // Delete all requests
+      await supabase.from('requests').delete().neq('id', '');
+      // Reset budget spend
+      for (const team in budgets) {
+        await supabase.from('budgets').update({ spent: 0 }).eq('team', team);
+      }
+      // Reset recommendations to active
+      await supabase.from('recommendations').update({ status: 'active' }).neq('id', '');
+      // Re-seed telemetry from live providers
+      const { requests: seedReqs, budgetSpend } = generateSeedRequests(providers);
+      const batchSize = 300;
+      for (let i = 0; i < seedReqs.length; i += batchSize) {
+        await supabase.from('requests').insert(seedReqs.slice(i, i + batchSize));
+      }
+      const freshBudgets = { ...budgets };
+      for (const team in budgetSpend) {
+        await supabase.from('budgets').update({ spent: budgetSpend[team] }).eq('team', team);
+        if (freshBudgets[team]) freshBudgets[team] = { ...freshBudgets[team], spent: budgetSpend[team] };
+      }
+      setRequests(seedReqs);
+      setBudgets(freshBudgets);
+      setRecommendations(prev => prev.map(r => ({ ...r, status: 'active' as const })));
+    } catch (err) {
+      console.error('resetSystemState error:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <StateContext.Provider value={{
-      providers,
-      requests,
-      policies,
-      budgets,
-      recommendations,
-      outcomes,
-      users,
-      updateBudgetLimit,
-      togglePolicy,
-      addPolicy,
-      applyRecommendation,
-      dismissRecommendation,
-      toggleProvider,
-      inviteUser,
-      deleteUser,
-      updateUserRole,
-      routeGatewayRequest,
-      resetSystemState
+      providers, requests, policies, budgets, recommendations, outcomes, users,
+      loading, error,
+      updateBudgetLimit, togglePolicy, addPolicy,
+      applyRecommendation, dismissRecommendation, toggleProvider,
+      inviteUser, deleteUser, updateUserRole,
+      routeGatewayRequest, resetSystemState
     }}>
       {children}
     </StateContext.Provider>
@@ -601,8 +761,6 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
 export const useAppState = () => {
   const context = useContext(StateContext);
-  if (!context) {
-    throw new Error('useAppState must be used within a StateProvider');
-  }
+  if (!context) throw new Error('useAppState must be used within a StateProvider');
   return context;
 };
