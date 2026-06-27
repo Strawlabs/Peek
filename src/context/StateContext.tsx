@@ -75,6 +75,15 @@ export interface User {
   status: 'Active' | 'Pending';
 }
 
+export interface Notification {
+  channel: 'slack' | 'teams' | 'system';
+  type: 'pii' | 'budget' | 'policy' | 'test';
+  title: string;
+  body: string;
+  destination: string;
+  timestamp: number;
+}
+
 // ─── Pricing lookup (no mock data — used only for cost calculations) ──────────
 
 export const PROVIDER_PRICING: Record<string, Record<string, { input: number; output: number }>> = {
@@ -244,6 +253,7 @@ interface StateContextType {
   recommendations: Recommendation[];
   outcomes: Outcome[];
   users: User[];
+  notifications: Notification[];
   loading: boolean;
   error: string | null;
   updateBudgetLimit: (team: string, limit: number) => Promise<void>;
@@ -255,6 +265,7 @@ interface StateContextType {
   inviteUser: (name: string, email: string, role: string) => Promise<void>;
   deleteUser: (id: string) => Promise<void>;
   updateUserRole: (id: string, role: string) => Promise<void>;
+  sendTestNotification: (channelId: 'slack' | 'teams', channelName: string, destination: string) => Promise<void>;
   routeGatewayRequest: (
     prompt: string, provider: string, model: string,
     team: string, environment: string, workflow: string, customer: string
@@ -274,8 +285,14 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [outcomes, setOutcomes] = useState<Outcome[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // ─── Helper: push a simulated notification ────────────────────────────────
+  const pushNotification = (n: Omit<Notification, 'timestamp'>) => {
+    setNotifications(prev => [...prev, { ...n, timestamp: Date.now() }]);
+  };
 
   // ─── 1. Initial load from Supabase + seed empty tables ─────────────────────
 
@@ -618,6 +635,22 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  // ─── Notification channel actions ─────────────────────────────────────────
+
+  const sendTestNotification = async (
+    channelId: 'slack' | 'teams',
+    channelName: string,
+    destination: string
+  ) => {
+    pushNotification({
+      channel: channelId,
+      type: 'test',
+      title: `Test Alert from Peek`,
+      body: `This is a simulated test notification from the Peek AI Governance Platform. Your ${channelName} integration is working correctly.`,
+      destination,
+    });
+  };
+
   // ─── Gateway simulation — logs every routed request to Supabase ─────────────
 
   const routeGatewayRequest = async (
@@ -638,11 +671,30 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const hasCard = /\b(?:\d[ -]*?){13,16}\b/.test(prompt);
       const hasSSN = /\b\d{3}-\d{2}-\d{4}\b/.test(prompt);
       if (hasEmail || hasCard || hasSSN) {
-        trace.push(`[WARNING] PII detected: ${hasEmail ? 'Email' : hasCard ? 'Credit Card' : 'SSN'}`);
+        const piiKind = hasEmail ? 'Email address' : hasCard ? 'Credit card number' : 'SSN';
+        trace.push(`[WARNING] PII detected: ${piiKind}`);
         if (piiPolicy.action === 'block') {
           blockRequest = true; status = 'PII Leak Blocked';
           trace.push(`[BLOCK] Gateway terminating connection immediately.`);
-        } else { status = 'PII Leak Flagged'; trace.push(`[FLAG] Audit log updated.`); }
+          // Fire alert notification
+          pushNotification({
+            channel: 'slack',
+            type: 'pii',
+            title: `🔴 PII Leak Blocked — ${team}`,
+            body: `${piiKind} detected in a ${workflow} request from ${team}. Gateway blocked the request. Workflow: ${workflow}.`,
+            destination: '#governance-alerts',
+          });
+        } else {
+          status = 'PII Leak Flagged';
+          trace.push(`[FLAG] Audit log updated.`);
+          pushNotification({
+            channel: 'slack',
+            type: 'pii',
+            title: `⚠️ PII Flagged — ${team}`,
+            body: `${piiKind} detected in a ${workflow} request from ${team} and flagged for review.`,
+            destination: '#governance-alerts',
+          });
+        }
       } else { trace.push(`[POLICY] PII scan passed.`); }
     }
 
@@ -654,7 +706,24 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (modelPolicy.action === 'block') {
           blockRequest = true; status = 'Policy Blocked';
           trace.push(`[BLOCK] Connection rejected.`);
-        } else { status = 'Policy Flagged'; trace.push(`[FLAG] Violation flagged.`); }
+          pushNotification({
+            channel: 'slack',
+            type: 'policy',
+            title: `🚫 Policy Blocked — Model Restriction`,
+            body: `Marketing team attempted to use gpt-4o which is not permitted under Approved Model Guardrails. Request blocked.`,
+            destination: '#governance-alerts',
+          });
+        } else {
+          status = 'Policy Flagged';
+          trace.push(`[FLAG] Violation flagged.`);
+          pushNotification({
+            channel: 'slack',
+            type: 'policy',
+            title: `⚠️ Policy Violation Flagged`,
+            body: `Marketing team used gpt-4o in violation of model restriction policy. Flagged for audit.`,
+            destination: '#governance-alerts',
+          });
+        }
       } else { trace.push(`[POLICY] Model constraint checks passed.`); }
     }
 
@@ -671,6 +740,13 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const teamBudget = budgets[team];
       if (teamBudget && (teamBudget.spent + calculatedCost) > teamBudget.limit) {
         trace.push(`[WARNING] Budget limit exceeded for ${team}: $${(teamBudget.spent + calculatedCost).toFixed(2)} / $${teamBudget.limit}`);
+        pushNotification({
+          channel: 'slack',
+          type: 'budget',
+          title: `💸 Budget Exceeded — ${team}`,
+          body: `${team} has exceeded their AI spend limit. Used: $${(teamBudget.spent + calculatedCost).toFixed(2)} of $${teamBudget.limit.toFixed(2)} allocated budget.`,
+          destination: '#budget-warnings',
+        });
       }
       trace.push(`[ATTRIBUTION] input_tokens=${tokensIn}, output_tokens=${tokensOut}`);
       trace.push(`[PROXY] Contacting ${provider}/${model}...`);
@@ -747,11 +823,12 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   return (
     <StateContext.Provider value={{
-      providers, requests, policies, budgets, recommendations, outcomes, users,
+      providers, requests, policies, budgets, recommendations, outcomes, users, notifications,
       loading, error,
       updateBudgetLimit, togglePolicy, addPolicy,
       applyRecommendation, dismissRecommendation, toggleProvider,
       inviteUser, deleteUser, updateUserRole,
+      sendTestNotification,
       routeGatewayRequest, resetSystemState
     }}>
       {children}
