@@ -172,6 +172,151 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({ setScreen }) => 
           </div>
         </div>
       </div>
+
+      {/* ─── Risk Alerts Panel (Task 6) ─── */}
+      <RiskAlertsPanel requests={requests} setScreen={setScreen} />
+    </div>
+  );
+};
+
+/* ─── Risk Alerts Panel ─── */
+const RiskAlertsPanel: React.FC<{
+  requests: ReturnType<typeof useAppState>['requests'];
+  setScreen: (s: string) => void;
+}> = ({ requests, setScreen }) => {
+  const piiLeaks = requests.filter(r => r.status.includes('PII'));
+  const modelViolations = requests.filter(r => r.status.includes('Policy'));
+  const highCost = requests.filter(r => r.status === 'High Cost');
+  const blocked = requests.filter(r => r.status.includes('Blocked'));
+
+  const alerts = [
+    {
+      id: 'risk-pii',
+      severity: 'critical' as const,
+      icon: 'privacy_tip',
+      title: 'PII Exposure Events Detected',
+      count: piiLeaks.length,
+      detail: `${piiLeaks.length} request${piiLeaks.length !== 1 ? 's' : ''} flagged for PII leakage (SSN, email, credit card patterns) in prompt payloads.`,
+      action: 'View Audit Logs',
+      screen: 'governance',
+    },
+    {
+      id: 'risk-block',
+      severity: 'critical' as const,
+      icon: 'block',
+      title: 'Gateway Blocked Requests',
+      count: blocked.length,
+      detail: `${blocked.length} request${blocked.length !== 1 ? 's' : ''} rejected by Gateway policy enforcement before reaching downstream providers.`,
+      action: 'Review Policies',
+      screen: 'governance',
+    },
+    {
+      id: 'risk-model',
+      severity: 'warning' as const,
+      icon: 'policy',
+      title: 'Model Restriction Violations',
+      count: modelViolations.length,
+      detail: `${modelViolations.length} request${modelViolations.length !== 1 ? 's' : ''} used non-approved models in restricted environments.`,
+      action: 'Manage Policies',
+      screen: 'governance',
+    },
+    {
+      id: 'risk-cost',
+      severity: 'info' as const,
+      icon: 'attach_money',
+      title: 'High-Cost Requests Logged',
+      count: highCost.length,
+      detail: `${highCost.length} request${highCost.length !== 1 ? 's' : ''} exceeded the per-request cost threshold. Review model selection.`,
+      action: 'View Intelligence',
+      screen: 'intelligence',
+    },
+  ].filter(a => a.count > 0);
+
+  if (alerts.length === 0) {
+    return (
+      <div className="glass-card rounded-xl p-6 flex items-center gap-4">
+        <span className="material-symbols-outlined text-emerald-400 text-[40px]">shield</span>
+        <div>
+          <h3 className="font-headline-sm text-headline-sm text-on-surface">All Systems Nominal</h3>
+          <p className="text-body-sm text-on-surface-variant mt-1">No active risk alerts. Gateway policies are operating within expected parameters.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const severityStyles = {
+    critical: {
+      border: 'border-rose-800/40',
+      bg: 'bg-rose-950/20',
+      badge: 'bg-rose-950/50 text-rose-400 border-rose-800/40',
+      icon: 'text-rose-400',
+      dot: 'bg-rose-400 animate-pulse',
+    },
+    warning: {
+      border: 'border-amber-800/40',
+      bg: 'bg-amber-950/20',
+      badge: 'bg-amber-950/50 text-amber-400 border-amber-800/40',
+      icon: 'text-amber-400',
+      dot: 'bg-amber-400',
+    },
+    info: {
+      border: 'border-cyan-800/40',
+      bg: 'bg-cyan-950/20',
+      badge: 'bg-cyan-950/50 text-cyan-400 border-cyan-800/40',
+      icon: 'text-cyan-400',
+      dot: 'bg-cyan-400',
+    },
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="font-headline-sm text-headline-sm text-on-surface flex items-center gap-2">
+          <span className="material-symbols-outlined text-rose-400 text-[22px]">crisis_alert</span>
+          Active Risk Alerts
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-950/50 text-rose-400 border border-rose-800/40">
+            {alerts.length} Active
+          </span>
+        </h3>
+        <button
+          onClick={() => setScreen('governance')}
+          className="text-xs text-primary font-bold hover:underline flex items-center gap-1"
+        >
+          View All in Audit Logs <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {alerts.map((alert) => {
+          const s = severityStyles[alert.severity];
+          return (
+            <div
+              key={alert.id}
+              className={`rounded-xl p-5 border ${s.border} ${s.bg} flex flex-col gap-3 transition-all hover:scale-[1.01]`}
+            >
+              <div className="flex items-start gap-3">
+                <div className="relative mt-0.5">
+                  <span className={`material-symbols-outlined text-[28px] ${s.icon}`}>{alert.icon}</span>
+                  <span className={`absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full ${s.dot}`} />
+                </div>
+                <div>
+                  <h4 className="font-bold text-on-surface text-sm">{alert.title}</h4>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${s.badge} uppercase mt-1 inline-block`}>
+                    {alert.severity} · {alert.count} event{alert.count !== 1 ? 's' : ''}
+                  </span>
+                </div>
+              </div>
+              <p className="text-xs text-on-surface-variant leading-relaxed">{alert.detail}</p>
+              <button
+                onClick={() => setScreen(alert.screen)}
+                className="self-start text-xs font-bold text-primary hover:underline flex items-center gap-1"
+              >
+                {alert.action} <span className="material-symbols-outlined text-[13px]">arrow_forward</span>
+              </button>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 };

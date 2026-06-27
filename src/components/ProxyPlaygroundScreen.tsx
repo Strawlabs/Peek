@@ -12,20 +12,28 @@ export const ProxyPlaygroundScreen: React.FC = () => {
   const [customer, setCustomer] = useState('Alphabet Corp');
   const [trace, setTrace] = useState<string[]>([]);
   const [result, setResult] = useState<{ success: boolean; cost: number; tokens: number; latency: number } | null>(null);
+  const [routing, setRouting] = useState(false);
 
   const connectedProviders = providers.filter((p) => p.status === 'connected');
   const selectedProvider = providers.find((p) => p.id === provider);
   const availableModels = selectedProvider?.models ?? [];
 
-  const handleRoute = () => {
-    const response = routeGatewayRequest(prompt, provider, model, team, environment, workflow, customer);
-    setTrace(response.trace);
-    setResult({
-      success: response.success,
-      cost: response.cost,
-      tokens: response.tokens,
-      latency: response.latency,
-    });
+  const handleRoute = async () => {
+    setRouting(true);
+    setTrace([]);
+    setResult(null);
+    try {
+      const response = await routeGatewayRequest(prompt, provider, model, team, environment, workflow, customer);
+      setTrace(response.trace);
+      setResult({
+        success: response.success,
+        cost: response.cost,
+        tokens: response.tokens,
+        latency: response.latency,
+      });
+    } finally {
+      setRouting(false);
+    }
   };
 
   return (
@@ -130,10 +138,20 @@ export const ProxyPlaygroundScreen: React.FC = () => {
           </div>
           <button
             onClick={handleRoute}
-            className="w-full py-3 bg-primary text-on-primary font-bold rounded-lg hover:opacity-90 transition-all flex items-center justify-center gap-2"
+            disabled={routing}
+            className="w-full py-3 bg-primary text-on-primary font-bold rounded-lg hover:opacity-90 transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            <span className="material-symbols-outlined">play_arrow</span>
-            Route Through Gateway
+            {routing ? (
+              <>
+                <span className="w-4 h-4 border-2 border-on-primary border-t-transparent rounded-full animate-spin"></span>
+                Routing...
+              </>
+            ) : (
+              <>
+                <span className="material-symbols-outlined">play_arrow</span>
+                Route Through Gateway
+              </>
+            )}
           </button>
         </div>
 

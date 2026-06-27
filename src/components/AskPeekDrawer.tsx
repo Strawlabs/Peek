@@ -86,7 +86,7 @@ export const AskPeekDrawer: React.FC<AskPeekDrawerProps> = ({ isOpen, onClose })
 
   return (
     <div
-      className={`fixed right-0 top-16 bottom-0 w-[500px] bg-surface-container-lowest border-l border-outline-variant z-50 flex flex-col transition-transform duration-300 transform ${
+      className={`fixed right-0 top-16 bottom-0 w-full max-w-[500px] bg-surface-container-lowest border-l border-outline-variant z-50 flex flex-col transition-transform duration-300 transform ${
         isOpen ? 'translate-x-0' : 'translate-x-full'
       }`}
     >
