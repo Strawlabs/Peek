@@ -71,7 +71,7 @@ function AppShell() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-background">
+    <div className="flex flex-col h-screen overflow-hidden bg-background">
       <Header
         setScreen={setScreen}
         toggleCopilotDrawer={() => setCopilotOpen((o) => !o)}
@@ -87,13 +87,13 @@ function AppShell() {
         setMobileOpen={setMobileNavOpen}
       />
 
-      {/* Main content — shifts right of sidebar only on lg+ */}
-            <main className="lg:ml-64 pt-16">
+      {/* Main content — shifts right of sidebar only on lg+; scrolls independently */}
+      <main className="lg:ml-64 pt-16 flex-1 overflow-y-auto">
         {/* Copilot drawer shifts content on large screens; on small it overlays */}
         <div
           className={`transition-all duration-300 ${copilotOpen ? 'lg:mr-[500px]' : ''}`}
         >
-          <div className="p-4 md:p-8 max-w-[1400px] mx-auto">
+          <div className="p-4 md:p-8 max-w-[1400px] mx-auto pb-12">
             {renderScreen()}
           </div>
         </div>
