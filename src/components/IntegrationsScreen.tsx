@@ -1,17 +1,9 @@
 import React, { useState } from 'react';
-import { useAppState } from '../context/StateContext';
+import { useAppState, type ChannelConfig } from '../context/StateContext';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type ChannelId = 'slack' | 'teams';
-
-interface ChannelConfig {
-  id: ChannelId;
-  name: string;
-  webhookUrl: string;
-  targetChannel: string;
-  connected: boolean;
-}
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -161,26 +153,9 @@ function ConfigModal({
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export const IntegrationsScreen: React.FC = () => {
-  const { providers, toggleProvider, notifications, sendTestNotification } = useAppState();
+  const { providers, toggleProvider, notifications, sendTestNotification, channels, updateChannelConfig } = useAppState();
   const [activeTab, setActiveTab] = useState<'providers' | 'enterprise' | 'notifications'>('providers');
   const [modalChannel, setModalChannel] = useState<ChannelConfig | null>(null);
-
-  const [channels, setChannels] = useState<ChannelConfig[]>([
-    {
-      id: 'slack',
-      name: 'Slack Alerts',
-      webhookUrl: '',
-      targetChannel: '#governance-alerts',
-      connected: false,
-    },
-    {
-      id: 'teams',
-      name: 'Microsoft Teams',
-      webhookUrl: '',
-      targetChannel: 'AI Governance',
-      connected: false,
-    },
-  ]);
 
   const otherIntegrations = [
     { id: 'datadog', name: 'Datadog', desc: 'Export telemetry metrics to Datadog dashboards.', icon: 'monitoring', connected: false },
@@ -190,13 +165,11 @@ export const IntegrationsScreen: React.FC = () => {
   ];
 
   const handleSaveChannel = (updated: ChannelConfig) => {
-    setChannels((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+    updateChannelConfig(updated.id, updated.webhookUrl, updated.targetChannel, updated.connected);
   };
 
   const handleDisconnect = (id: ChannelId) => {
-    setChannels((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, connected: false, webhookUrl: '' } : c))
-    );
+    updateChannelConfig(id, '', '', false);
   };
 
   const [sendingTest, setSendingTest] = useState<ChannelId | null>(null);
