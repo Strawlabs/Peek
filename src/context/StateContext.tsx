@@ -84,6 +84,14 @@ export interface Notification {
   timestamp: number;
 }
 
+export interface ChannelConfig {
+  id: 'slack' | 'teams';
+  name: string;
+  webhookUrl: string;
+  targetChannel: string;
+  connected: boolean;
+}
+
 // ─── Pricing lookup (no mock data — used only for cost calculations) ──────────
 
 export const PROVIDER_PRICING: Record<string, Record<string, { input: number; output: number }>> = {
@@ -254,6 +262,7 @@ interface StateContextType {
   outcomes: Outcome[];
   users: User[];
   notifications: Notification[];
+  channels: ChannelConfig[];
   loading: boolean;
   error: string | null;
   updateBudgetLimit: (team: string, limit: number) => Promise<void>;
@@ -266,6 +275,7 @@ interface StateContextType {
   deleteUser: (id: string) => Promise<void>;
   updateUserRole: (id: string, role: string) => Promise<void>;
   sendTestNotification: (channelId: 'slack' | 'teams', channelName: string, destination: string) => Promise<void>;
+  updateChannelConfig: (id: 'slack' | 'teams', webhookUrl: string, targetChannel: string, connected: boolean) => void;
   routeGatewayRequest: (
     prompt: string, provider: string, model: string,
     team: string, environment: string, workflow: string, customer: string
@@ -289,9 +299,86 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [channels, setChannels] = useState<ChannelConfig[]>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('peek_notification_channels');
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch (e) {
+          console.error('Failed to parse channels from localStorage', e);
+        }
+      }
+    }
+    return [
+      {
+        id: 'slack',
+        name: 'Slack Alerts',
+        webhookUrl: '',
+        targetChannel: '#governance-alerts',
+        connected: false,
+      },
+      {
+        id: 'teams',
+        name: 'Microsoft Teams',
+        webhookUrl: '',
+        targetChannel: 'AI Governance',
+        connected: false,
+      },
+    ];
+  });
+
+  const updateChannelConfig = (id: 'slack' | 'teams', webhookUrl: string, targetChannel: string, connected: boolean) => {
+    setChannels(prev => {
+      const updated = prev.map(c => c.id === id ? { ...c, webhookUrl, targetChannel, connected } : c);
+      localStorage.setItem('peek_notification_channels', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
   // ─── Helper: push a simulated notification ────────────────────────────────
   const pushNotification = (n: Omit<Notification, 'timestamp'>) => {
     setNotifications(prev => [...prev, { ...n, timestamp: Date.now() }]);
+  };
+
+  const dispatchNotification = (
+    type: 'pii' | 'budget' | 'policy',
+    title: string,
+    body: string,
+    defaultSlackChannel: string,
+    defaultTeamsChannel: string
+  ) => {
+    const slackChan = channels.find(c => c.id === 'slack');
+    if (slackChan?.connected) {
+      pushNotification({
+        channel: 'slack',
+        type,
+        title,
+        body,
+        destination: slackChan.targetChannel || defaultSlackChannel,
+      });
+    }
+
+    const teamsChan = channels.find(c => c.id === 'teams');
+    if (teamsChan?.connected) {
+      pushNotification({
+        channel: 'teams',
+        type,
+        title,
+        body,
+        destination: teamsChan.targetChannel || defaultTeamsChannel,
+      });
+    }
+
+    if (!slackChan?.connected && !teamsChan?.connected) {
+      pushNotification({
+        channel: 'system',
+        type,
+        title: `[System] ${title}`,
+        body: `${body} (No external notification channels connected)`,
+        destination: 'System Log',
+      });
+    }
   };
 
   // ─── 1. Initial load from Supabase + seed empty tables ─────────────────────
@@ -677,23 +764,23 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           blockRequest = true; status = 'PII Leak Blocked';
           trace.push(`[BLOCK] Gateway terminating connection immediately.`);
           // Fire alert notification
-          pushNotification({
-            channel: 'slack',
-            type: 'pii',
-            title: `🔴 PII Leak Blocked — ${team}`,
-            body: `${piiKind} detected in a ${workflow} request from ${team}. Gateway blocked the request. Workflow: ${workflow}.`,
-            destination: '#governance-alerts',
-          });
+          dispatchNotification(
+            'pii',
+            `🔴 PII Leak Blocked — ${team}`,
+            `${piiKind} detected in a ${workflow} request from ${team}. Gateway blocked the request. Workflow: ${workflow}.`,
+            '#governance-alerts',
+            'AI Governance'
+          );
         } else {
           status = 'PII Leak Flagged';
           trace.push(`[FLAG] Audit log updated.`);
-          pushNotification({
-            channel: 'slack',
-            type: 'pii',
-            title: `⚠️ PII Flagged — ${team}`,
-            body: `${piiKind} detected in a ${workflow} request from ${team} and flagged for review.`,
-            destination: '#governance-alerts',
-          });
+          dispatchNotification(
+            'pii',
+            `⚠️ PII Flagged — ${team}`,
+            `${piiKind} detected in a ${workflow} request from ${team} and flagged for review.`,
+            '#governance-alerts',
+            'AI Governance'
+          );
         }
       } else { trace.push(`[POLICY] PII scan passed.`); }
     }
@@ -706,23 +793,23 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (modelPolicy.action === 'block') {
           blockRequest = true; status = 'Policy Blocked';
           trace.push(`[BLOCK] Connection rejected.`);
-          pushNotification({
-            channel: 'slack',
-            type: 'policy',
-            title: `🚫 Policy Blocked — Model Restriction`,
-            body: `Marketing team attempted to use gpt-4o which is not permitted under Approved Model Guardrails. Request blocked.`,
-            destination: '#governance-alerts',
-          });
+          dispatchNotification(
+            'policy',
+            `🚫 Policy Blocked — Model Restriction`,
+            `Marketing team attempted to use gpt-4o which is not permitted under Approved Model Guardrails. Request blocked.`,
+            '#governance-alerts',
+            'AI Governance'
+          );
         } else {
           status = 'Policy Flagged';
           trace.push(`[FLAG] Violation flagged.`);
-          pushNotification({
-            channel: 'slack',
-            type: 'policy',
-            title: `⚠️ Policy Violation Flagged`,
-            body: `Marketing team used gpt-4o in violation of model restriction policy. Flagged for audit.`,
-            destination: '#governance-alerts',
-          });
+          dispatchNotification(
+            'policy',
+            `⚠️ Policy Violation Flagged`,
+            `Marketing team used gpt-4o in violation of model restriction policy. Flagged for audit.`,
+            '#governance-alerts',
+            'AI Governance'
+          );
         }
       } else { trace.push(`[POLICY] Model constraint checks passed.`); }
     }
@@ -740,13 +827,13 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const teamBudget = budgets[team];
       if (teamBudget && (teamBudget.spent + calculatedCost) > teamBudget.limit) {
         trace.push(`[WARNING] Budget limit exceeded for ${team}: $${(teamBudget.spent + calculatedCost).toFixed(2)} / $${teamBudget.limit}`);
-        pushNotification({
-          channel: 'slack',
-          type: 'budget',
-          title: `💸 Budget Exceeded — ${team}`,
-          body: `${team} has exceeded their AI spend limit. Used: $${(teamBudget.spent + calculatedCost).toFixed(2)} of $${teamBudget.limit.toFixed(2)} allocated budget.`,
-          destination: '#budget-warnings',
-        });
+        dispatchNotification(
+          'budget',
+          `💸 Budget Exceeded — ${team}`,
+          `${team} has exceeded their AI spend limit. Used: $${(teamBudget.spent + calculatedCost).toFixed(2)} of $${teamBudget.limit.toFixed(2)} allocated budget.`,
+          '#budget-warnings',
+          'Budget Alerts'
+        );
       }
       trace.push(`[ATTRIBUTION] input_tokens=${tokensIn}, output_tokens=${tokensOut}`);
       trace.push(`[PROXY] Contacting ${provider}/${model}...`);
@@ -824,11 +911,11 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   return (
     <StateContext.Provider value={{
       providers, requests, policies, budgets, recommendations, outcomes, users, notifications,
-      loading, error,
+      channels, loading, error,
       updateBudgetLimit, togglePolicy, addPolicy,
       applyRecommendation, dismissRecommendation, toggleProvider,
       inviteUser, deleteUser, updateUserRole,
-      sendTestNotification,
+      sendTestNotification, updateChannelConfig,
       routeGatewayRequest, resetSystemState
     }}>
       {children}
