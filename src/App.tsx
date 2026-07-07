@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { StateProvider } from './context/StateContext';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
@@ -16,12 +16,122 @@ import { IntegrationsScreen } from './components/IntegrationsScreen';
 
 import { useAppState } from './context/StateContext';
 
+function SetPasswordModal({ onClose }: { onClose: () => void }) {
+  const { updatePassword, authSession } = useAppState();
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [toast, setToast] = useState<{ message: string; success: boolean } | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (password.length < 6) {
+      setToast({ message: 'Password must be at least 6 characters long.', success: false });
+      return;
+    }
+    if (password !== confirmPassword) {
+      setToast({ message: 'Passwords do not match.', success: false });
+      return;
+    }
+
+    setSubmitting(true);
+    setToast(null);
+
+    const res = await updatePassword(password);
+    setSubmitting(false);
+
+    if (res.error) {
+      setToast({ message: `❌ ${res.error}`, success: false });
+    } else {
+      setToast({ message: '🎉 Password set successfully! You are now fully activated.', success: true });
+      setTimeout(() => {
+        onClose();
+      }, 2000);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-background/80 backdrop-blur-md p-4">
+      <form onSubmit={handleSubmit} className="glass-card rounded-2xl p-8 max-w-md w-full space-y-5 border border-primary/20 shadow-2xl relative">
+        <div className="text-center space-y-2">
+          <span className="material-symbols-outlined text-[48px] text-primary">lock_reset</span>
+          <h3 className="font-headline-md text-headline-md text-on-surface">Set Your Password</h3>
+          <p className="text-body-sm text-on-surface-variant">
+            You successfully accepted the invitation for <strong>{authSession?.email}</strong>. Please set a secure password to finalize your account setup.
+          </p>
+        </div>
+
+        {toast && (
+          <div className={`p-3 rounded-lg text-xs font-medium ${
+            toast.success ? 'bg-emerald-950/80 border border-emerald-700/50 text-emerald-300' : 'bg-rose-950/80 border border-rose-700/50 text-rose-300'
+          }`}>
+            {toast.message}
+          </div>
+        )}
+
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-bold text-on-surface-variant uppercase mb-1">New Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Min 6 characters"
+              required
+              disabled={submitting}
+              className="w-full bg-surface-container border border-outline-variant rounded-lg px-3 py-2 text-body-sm text-on-surface focus:outline-none focus:border-primary"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-on-surface-variant uppercase mb-1">Confirm Password</label>
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Repeat password"
+              required
+              disabled={submitting}
+              className="w-full bg-surface-container border border-outline-variant rounded-lg px-3 py-2 text-body-sm text-on-surface focus:outline-none focus:border-primary"
+            />
+          </div>
+        </div>
+
+        <button
+          type="submit"
+          disabled={submitting}
+          className="w-full py-3 bg-primary text-on-primary font-bold rounded-lg hover:opacity-90 disabled:opacity-50 transition-all text-sm flex items-center justify-center gap-2"
+        >
+          {submitting ? (
+            <>
+              <span className="w-4 h-4 border-2 border-on-primary border-t-transparent rounded-full animate-spin" />
+              Saving…
+            </>
+          ) : (
+            'Finalize Account'
+          )}
+        </button>
+      </form>
+    </div>
+  );
+}
+
 function AppShell() {
   const { loading, error } = useAppState();
   const [currentScreen, setScreen] = useState('overview');
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [showSetPassword, setShowSetPassword] = useState(false);
+
+  // Detect invite redirect on load
+  useEffect(() => {
+    const isInvite = window.location.hash.includes('type=invite') || window.location.hash.includes('type=recovery');
+    if (isInvite) {
+      setShowSetPassword(true);
+      // Clean URL hash so refreshing doesn't keep triggering modal
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+  }, []);
 
   if (loading) {
     return (
@@ -101,6 +211,11 @@ function AppShell() {
 
       {/* Copilot drawer */}
       <AskPeekDrawer isOpen={copilotOpen} onClose={() => setCopilotOpen(false)} />
+
+      {/* Set Password Modal */}
+      {showSetPassword && (
+        <SetPasswordModal onClose={() => setShowSetPassword(false)} />
+      )}
     </div>
   );
 }

@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { useAppState } from '../context/StateContext';
 
 interface HeaderProps {
   setScreen: (screen: string) => void;
@@ -15,6 +16,9 @@ export const Header: React.FC<HeaderProps> = ({
   setSearchQuery,
   onMenuToggle,
 }) => {
+  const { authSession, signOut } = useAppState();
+  const [showDropdown, setShowDropdown] = useState(false);
+
   return (
     <header className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 md:px-8 h-16 bg-background/85 backdrop-blur-md border-b border-outline-variant">
       <div className="flex items-center gap-3">
@@ -69,12 +73,62 @@ export const Header: React.FC<HeaderProps> = ({
           </span>
         </div>
 
-        <div className="w-8 h-8 rounded-full border border-outline-variant overflow-hidden bg-surface-container flex-shrink-0">
-          <img
-            alt="User Profile"
-            className="w-full h-full object-cover"
-            src="https://lh3.googleusercontent.com/aida-public/AB6AXuBiIp7Yl8qooEkwD0OeOPvjWOY9bG7gC6gY4xCYsviskez2MrK2qmT7_iEysZy1ZgSE7OuoBGALT46zffHiQDkn5bif_wrl_F57PEdVt9FE4Dij3yk4bsx35UBVCLrB2CYV-c08Sny4BIrZvNWKM00Uzbe5dul-7ce7ZoDq3_uuN2EkXtfezkZyQvBvLMWOZk6U57jDqvNXPxpcfi3PXegC-B0VpxLIqm-HoAiauHGFnZFrzvR19tvkFqTMMaV84XefPS8hpIEh86I"
-          />
+        {/* User Profile / Dropdown */}
+        <div className="relative">
+          <button
+            onClick={() => setShowDropdown(!showDropdown)}
+            className="flex items-center gap-2 focus:outline-none rounded-full hover:bg-surface-variant/30 p-1 transition-all"
+          >
+            <div className="w-8 h-8 rounded-full border border-outline-variant overflow-hidden bg-surface-container flex-shrink-0">
+              <img
+                alt="User Profile"
+                className="w-full h-full object-cover"
+                src="https://lh3.googleusercontent.com/aida-public/AB6AXuBiIp7Yl8qooEkwD0OeOPvjWOY9bG7gC6gY4xCYsviskez2MrK2qmT7_iEysZy1ZgSE7OuoBGALT46zffHiQDkn5bif_wrl_F57PEdVt9FE4Dij3yk4bsx35UBVCLrB2CYV-c08Sny4BIrZvNWKM00Uzbe5dul-7ce7ZoDq3_uuN2EkXtfezkZyQvBvLMWOZk6U57jDqvNXPxpcfi3PXegC-B0VpxLIqm-HoAiauHGFnZFrzvR19tvkFqTMMaV84XefPS8hpIEh86I"
+              />
+            </div>
+            {authSession && (
+              <span className="hidden lg:inline text-xs font-medium text-on-surface">
+                {authSession.email}
+              </span>
+            )}
+          </button>
+
+          {showDropdown && (
+            <div className="absolute right-0 mt-2 w-48 bg-surface-container-high border border-outline-variant rounded-xl shadow-2xl p-2 z-50 space-y-1">
+              {authSession ? (
+                <>
+                  <div className="px-3 py-2 text-xs text-on-surface-variant border-b border-outline-variant/30 font-medium">
+                    Signed in as <br />
+                    <strong className="text-on-surface break-all">{authSession.email}</strong>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setShowDropdown(false);
+                      setScreen('settings');
+                    }}
+                    className="w-full text-left px-3 py-2 text-xs text-on-surface hover:bg-surface-variant rounded-lg transition-all flex items-center gap-2"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">settings</span>
+                    Account Settings
+                  </button>
+                  <button
+                    onClick={async () => {
+                      setShowDropdown(false);
+                      await signOut();
+                    }}
+                    className="w-full text-left px-3 py-2 text-xs text-rose-400 hover:bg-rose-950/20 rounded-lg transition-all flex items-center gap-2 font-medium"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">logout</span>
+                    Sign Out
+                  </button>
+                </>
+              ) : (
+                <div className="px-3 py-2 text-xs text-on-surface-variant font-medium">
+                  Viewing in Admin mode.
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </header>

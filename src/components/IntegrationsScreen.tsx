@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useAppState, type ChannelConfig } from '../context/StateContext';
+import { useAppState, type ChannelConfig, type EnterpriseIntegration } from '../context/StateContext';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -150,19 +150,284 @@ function ConfigModal({
   );
 }
 
+function EnterpriseConfigModal({
+  integration,
+  onSave,
+  onClose,
+}: {
+  integration: EnterpriseIntegration;
+  onSave: (id: 'datadog' | 'jira' | 'snowflake' | 'pagerduty', connected: boolean, config: Record<string, string>) => void;
+  onClose: () => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const [apiKey, setApiKey] = useState(integration.config?.apiKey || '');
+  const [site, setSite] = useState(integration.config?.site || 'datadoghq.com');
+
+  const [siteUrl, setSiteUrl] = useState(integration.config?.siteUrl || '');
+  const [email, setEmail] = useState(integration.config?.email || '');
+  const [apiToken, setApiToken] = useState(integration.config?.apiToken || '');
+
+  const [account, setAccount] = useState(integration.config?.account || '');
+  const [warehouse, setWarehouse] = useState(integration.config?.warehouse || 'COMPUTE_WH');
+  const [database, setDatabase] = useState(integration.config?.database || 'PEEK_DB');
+  const [username, setUsername] = useState(integration.config?.username || '');
+  const [password, setPassword] = useState(integration.config?.password || '');
+
+  const [routingKey, setRoutingKey] = useState(integration.config?.routingKey || '');
+
+  const handleSave = async () => {
+    setSaving(true);
+    await new Promise((r) => setTimeout(r, 800));
+    setSaving(false);
+    setSaved(true);
+
+    let config: Record<string, string> = {};
+    if (integration.id === 'datadog') {
+      config = { apiKey, site };
+    } else if (integration.id === 'jira') {
+      config = { siteUrl, email, apiToken };
+    } else if (integration.id === 'snowflake') {
+      config = { account, warehouse, database, username, password };
+    } else if (integration.id === 'pagerduty') {
+      config = { routingKey };
+    }
+
+    setTimeout(() => {
+      onSave(integration.id, true, config);
+      onClose();
+    }, 600);
+  };
+
+  const isFormValid = () => {
+    if (integration.id === 'datadog') return !!apiKey;
+    if (integration.id === 'jira') return !!siteUrl && !!email && !!apiToken;
+    if (integration.id === 'snowflake') return !!account && !!username && !!password;
+    if (integration.id === 'pagerduty') return !!routingKey;
+    return false;
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="glass-card rounded-2xl p-8 w-full max-w-md mx-4 border border-outline-variant shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center gap-3 mb-6">
+          <span className="material-symbols-outlined text-primary text-3xl">{integration.icon}</span>
+          <div>
+            <h3 className="font-bold text-on-surface text-lg">
+              Configure {integration.name}
+            </h3>
+            <p className="text-xs text-on-surface-variant">
+              Set up enterprise sync and alert routing
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="ml-auto text-on-surface-variant hover:text-on-surface transition-colors"
+          >
+            <span className="material-symbols-outlined">close</span>
+          </button>
+        </div>
+
+        {/* Dynamic Fields */}
+        <div className="space-y-4 mb-6">
+          {integration.id === 'datadog' && (
+            <>
+              <label className="block">
+                <span className="text-xs font-bold text-on-surface-variant uppercase mb-1 block">
+                  Datadog API Key
+                </span>
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="Enter Datadog API Key"
+                  className="w-full bg-surface-container border border-outline-variant rounded-lg px-3 py-2 text-xs text-on-surface font-mono placeholder:text-outline focus:outline-none focus:border-primary transition-colors"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs font-bold text-on-surface-variant uppercase mb-1 block">
+                  Datadog Site
+                </span>
+                <select
+                  value={site}
+                  onChange={(e) => setSite(e.target.value)}
+                  className="w-full bg-surface-container border border-outline-variant rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary transition-colors"
+                >
+                  <option value="datadoghq.com">US1 (datadoghq.com)</option>
+                  <option value="us3.datadoghq.com">US3 (us3.datadoghq.com)</option>
+                  <option value="us5.datadoghq.com">US5 (us5.datadoghq.com)</option>
+                  <option value="datadoghq.eu">EU1 (datadoghq.eu)</option>
+                  <option value="ap1.datadoghq.com">AP1 (ap1.datadoghq.com)</option>
+                </select>
+              </label>
+            </>
+          )}
+
+          {integration.id === 'jira' && (
+            <>
+              <label className="block">
+                <span className="text-xs font-bold text-on-surface-variant uppercase mb-1 block">
+                  Jira Site URL
+                </span>
+                <input
+                  type="text"
+                  value={siteUrl}
+                  onChange={(e) => setSiteUrl(e.target.value)}
+                  placeholder="https://company.atlassian.net"
+                  className="w-full bg-surface-container border border-outline-variant rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary transition-colors"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs font-bold text-on-surface-variant uppercase mb-1 block">
+                  Atlassian Email
+                </span>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="name@company.com"
+                  className="w-full bg-surface-container border border-outline-variant rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary transition-colors"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs font-bold text-on-surface-variant uppercase mb-1 block">
+                  Atlassian API Token
+                </span>
+                <input
+                  type="password"
+                  value={apiToken}
+                  onChange={(e) => setApiToken(e.target.value)}
+                  placeholder="Enter API Token"
+                  className="w-full bg-surface-container border border-outline-variant rounded-lg px-3 py-2 text-xs text-on-surface font-mono placeholder:text-outline focus:outline-none focus:border-primary transition-colors"
+                />
+              </label>
+            </>
+          )}
+
+          {integration.id === 'snowflake' && (
+            <>
+              <label className="block">
+                <span className="text-xs font-bold text-on-surface-variant uppercase mb-1 block">
+                  Snowflake Account Identifier
+                </span>
+                <input
+                  type="text"
+                  value={account}
+                  onChange={(e) => setAccount(e.target.value)}
+                  placeholder="e.g. xy12345.us-east-1"
+                  className="w-full bg-surface-container border border-outline-variant rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary transition-colors"
+                />
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="text-xs font-bold text-on-surface-variant uppercase mb-1 block">
+                    Warehouse
+                  </span>
+                  <input
+                    type="text"
+                    value={warehouse}
+                    onChange={(e) => setWarehouse(e.target.value)}
+                    className="w-full bg-surface-container border border-outline-variant rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary transition-colors"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-bold text-on-surface-variant uppercase mb-1 block">
+                    Database
+                  </span>
+                  <input
+                    type="text"
+                    value={database}
+                    onChange={(e) => setDatabase(e.target.value)}
+                    className="w-full bg-surface-container border border-outline-variant rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary transition-colors"
+                  />
+                </label>
+              </div>
+              <label className="block">
+                <span className="text-xs font-bold text-on-surface-variant uppercase mb-1 block">
+                  Username
+                </span>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="PEEK_SYNC"
+                  className="w-full bg-surface-container border border-outline-variant rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary transition-colors"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs font-bold text-on-surface-variant uppercase mb-1 block">
+                  Password
+                </span>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••••••"
+                  className="w-full bg-surface-container border border-outline-variant rounded-lg px-3 py-2 text-xs text-on-surface font-mono placeholder:text-outline focus:outline-none focus:border-primary transition-colors"
+                />
+              </label>
+            </>
+          )}
+
+          {integration.id === 'pagerduty' && (
+            <>
+              <label className="block">
+                <span className="text-xs font-bold text-on-surface-variant uppercase mb-1 block">
+                  PagerDuty Routing Key
+                </span>
+                <input
+                  type="password"
+                  value={routingKey}
+                  onChange={(e) => setRoutingKey(e.target.value)}
+                  placeholder="Enter Routing Key"
+                  className="w-full bg-surface-container border border-outline-variant rounded-lg px-3 py-2 text-xs text-on-surface font-mono placeholder:text-outline focus:outline-none focus:border-primary transition-colors"
+                />
+              </label>
+            </>
+          )}
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2 rounded-lg border border-outline-variant text-xs font-bold text-on-surface-variant hover:bg-surface-variant transition-all"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={!isFormValid() || saving || saved}
+            className="flex-1 py-2 rounded-lg bg-primary text-on-primary text-xs font-bold hover:opacity-90 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+          >
+            {saving ? (
+              <>
+                <span className="w-3 h-3 border-2 border-on-primary border-t-transparent rounded-full animate-spin" />
+                Saving…
+              </>
+            ) : saved ? (
+              <>
+                <span className="material-symbols-outlined text-[14px]">check_circle</span>
+                Saved!
+              </>
+            ) : (
+              'Save & Connect'
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export const IntegrationsScreen: React.FC = () => {
-  const { providers, toggleProvider, notifications, sendTestNotification, channels, updateChannelConfig } = useAppState();
+  const { providers, toggleProvider, notifications, sendTestNotification, channels, updateChannelConfig, enterpriseIntegrations, updateEnterpriseIntegration } = useAppState();
   const [activeTab, setActiveTab] = useState<'providers' | 'enterprise' | 'notifications'>('providers');
   const [modalChannel, setModalChannel] = useState<ChannelConfig | null>(null);
-
-  const otherIntegrations = [
-    { id: 'datadog', name: 'Datadog', desc: 'Export telemetry metrics to Datadog dashboards.', icon: 'monitoring', connected: false },
-    { id: 'jira', name: 'Jira', desc: 'Auto-create tickets for policy violations and cost anomalies.', icon: 'bug_report', connected: false },
-    { id: 'snowflake', name: 'Snowflake', desc: 'Sync AI spend data to your data warehouse.', icon: 'cloud', connected: true },
-    { id: 'pagerduty', name: 'PagerDuty', desc: 'Escalate critical governance incidents to on-call teams.', icon: 'notification_important', connected: false },
-  ];
+  const [modalIntegration, setModalIntegration] = useState<EnterpriseIntegration | null>(null);
 
   const handleSaveChannel = (updated: ChannelConfig) => {
     updateChannelConfig(updated.id, updated.webhookUrl, updated.targetChannel, updated.connected);
@@ -354,22 +619,39 @@ export const IntegrationsScreen: React.FC = () => {
               Observability & Workflow
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {otherIntegrations.map((int) => (
+              {enterpriseIntegrations.map((int) => (
                 <div key={int.id} className="glass-card rounded-xl p-6 flex items-start gap-4">
                   <span className="material-symbols-outlined text-primary text-[32px]">{int.icon}</span>
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <h4 className="font-bold text-on-surface">{int.name}</h4>
-                      {int.connected && (
-                        <span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-emerald-950/40 text-emerald-400">
+                      {int.connected ? (
+                        <span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-emerald-950/40 text-emerald-400 border border-emerald-800/30">
                           Connected
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-surface-container text-outline border border-outline-variant">
+                          Not Connected
                         </span>
                       )}
                     </div>
                     <p className="text-body-sm text-on-surface-variant mt-1">{int.desc}</p>
-                    <button className="mt-3 text-xs font-bold text-primary hover:underline">
-                      {int.connected ? 'Configure' : 'Connect'}
-                    </button>
+                    <div className="flex items-center gap-2 mt-3">
+                      <button
+                        onClick={() => setModalIntegration(int)}
+                        className="px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-xs font-bold text-primary hover:bg-primary/20 transition-all cursor-pointer"
+                      >
+                        {int.connected ? 'Configure' : 'Connect'}
+                      </button>
+                      {int.connected && (
+                        <button
+                          onClick={() => updateEnterpriseIntegration(int.id, false, int.config)}
+                          className="px-3 py-1.5 rounded-lg border border-rose-800/40 text-xs font-bold text-rose-400 hover:bg-rose-950/20 transition-all cursor-pointer"
+                        >
+                          Disconnect
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -453,6 +735,15 @@ export const IntegrationsScreen: React.FC = () => {
           channel={modalChannel}
           onSave={handleSaveChannel}
           onClose={() => setModalChannel(null)}
+        />
+      )}
+
+      {/* Configure Enterprise Integration Modal */}
+      {modalIntegration && (
+        <EnterpriseConfigModal
+          integration={modalIntegration}
+          onSave={updateEnterpriseIntegration}
+          onClose={() => setModalIntegration(null)}
         />
       )}
     </div>

@@ -92,6 +92,16 @@ export interface ChannelConfig {
   connected: boolean;
 }
 
+export interface EnterpriseIntegration {
+  id: 'datadog' | 'jira' | 'snowflake' | 'pagerduty';
+  name: string;
+  desc: string;
+  icon: string;
+  connected: boolean;
+  config: Record<string, string>;
+}
+
+
 // ─── Pricing lookup (no mock data — used only for cost calculations) ──────────
 
 export const PROVIDER_PRICING: Record<string, Record<string, { input: number; output: number }>> = {
@@ -263,6 +273,7 @@ interface StateContextType {
   users: User[];
   notifications: Notification[];
   channels: ChannelConfig[];
+  enterpriseIntegrations: EnterpriseIntegration[];
   loading: boolean;
   error: string | null;
   updateBudgetLimit: (team: string, limit: number) => Promise<void>;
@@ -274,13 +285,18 @@ interface StateContextType {
   inviteUser: (name: string, email: string, role: string) => Promise<void>;
   deleteUser: (id: string) => Promise<void>;
   updateUserRole: (id: string, role: string) => Promise<void>;
+  activateUser: (id: string) => Promise<void>;
   sendTestNotification: (channelId: 'slack' | 'teams', channelName: string, destination: string) => Promise<void>;
   updateChannelConfig: (id: 'slack' | 'teams', webhookUrl: string, targetChannel: string, connected: boolean) => void;
+  updateEnterpriseIntegration: (id: 'datadog' | 'jira' | 'snowflake' | 'pagerduty', connected: boolean, config: Record<string, string>) => void;
   routeGatewayRequest: (
     prompt: string, provider: string, model: string,
     team: string, environment: string, workflow: string, customer: string
   ) => Promise<{ success: boolean; trace: string[]; cost: number; tokens: number; latency: number }>;
   resetSystemState: () => Promise<void>;
+  authSession: any | null;
+  signOut: () => Promise<void>;
+  updatePassword: (password: string) => Promise<{ success: boolean; error: string | null }>;
 }
 
 const StateContext = createContext<StateContextType | undefined>(undefined);
@@ -298,6 +314,7 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [authSession, setAuthSession] = useState<any | null>(null);
 
   const [channels, setChannels] = useState<ChannelConfig[]>(() => {
     if (typeof window !== 'undefined') {
@@ -332,6 +349,33 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setChannels(prev => {
       const updated = prev.map(c => c.id === id ? { ...c, webhookUrl, targetChannel, connected } : c);
       localStorage.setItem('peek_notification_channels', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const [enterpriseIntegrations, setEnterpriseIntegrations] = useState<EnterpriseIntegration[]>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('peek_enterprise_integrations');
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch (e) {
+          console.error('Failed to parse enterprise integrations', e);
+        }
+      }
+    }
+    return [
+      { id: 'datadog', name: 'Datadog', desc: 'Export telemetry metrics to Datadog dashboards.', icon: 'monitoring', connected: false, config: { apiKey: '', site: 'datadoghq.com' } },
+      { id: 'jira', name: 'Jira', desc: 'Auto-create tickets for policy violations and cost anomalies.', icon: 'bug_report', connected: false, config: { siteUrl: '', email: '', apiToken: '' } },
+      { id: 'snowflake', name: 'Snowflake', desc: 'Sync AI spend data to your data warehouse.', icon: 'cloud', connected: true, config: { account: 'sf-demo-123', username: 'PEEK_SYNC', password: '••••••••••••' } },
+      { id: 'pagerduty', name: 'PagerDuty', desc: 'Escalate critical governance incidents to on-call teams.', icon: 'notification_important', connected: false, config: { routingKey: '' } },
+    ];
+  });
+
+  const updateEnterpriseIntegration = (id: 'datadog' | 'jira' | 'snowflake' | 'pagerduty', connected: boolean, config: Record<string, string>) => {
+    setEnterpriseIntegrations(prev => {
+      const updated = prev.map(item => item.id === id ? { ...item, connected, config } : item);
+      localStorage.setItem('peek_enterprise_integrations', JSON.stringify(updated));
       return updated;
     });
   };
@@ -614,6 +658,56 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
   }, []);
 
+  // ─── Auth State Listener ───────────────────────────────────────────────────
+  useEffect(() => {
+    // 1. Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setAuthSession(session?.user ?? null);
+      if (session?.user) {
+        handleStatusTransition(session.user);
+      }
+    });
+
+    // 2. Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      setAuthSession(session?.user ?? null);
+      if (session?.user) {
+        handleStatusTransition(session.user);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [users]);
+
+  // Helper to transition Pending user to Active upon signing in
+  const handleStatusTransition = async (authUser: any) => {
+    // Look up user by email or ID in the public users table
+    const matchingUser = users.find(u => u.email.toLowerCase() === authUser.email?.toLowerCase());
+    if (matchingUser && matchingUser.status === 'Pending') {
+      console.log(`[Peek] Transitioning user ${matchingUser.email} from Pending to Active (Auth event detected)`);
+      // Update locally
+      setUsers(prev => prev.map(u => u.id === matchingUser.id ? { ...u, status: 'Active' as const, id: authUser.id } : u));
+      // Update in DB (also update the ID to match the auth.users ID if it was random before)
+      await supabase.from('users').update({ status: 'Active', id: authUser.id }).eq('email', matchingUser.email);
+    }
+  };
+
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    setAuthSession(null);
+  };
+
+  const updatePassword = async (password: string) => {
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) {
+      console.error('[Peek] Failed to update password:', error.message);
+      return { success: false, error: error.message };
+    }
+    return { success: true, error: null };
+  };
+
   // ─── CRUD Operations (optimistic + Supabase write + rollback on error) ──────
 
   const updateBudgetLimit = async (team: string, limit: number) => {
@@ -718,6 +812,16 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const { error } = await supabase.from('users').update({ role }).eq('id', id);
     if (error) {
       console.error('updateUserRole failed:', error.message);
+      if (prev) setUsers(us => us.map(u => u.id === id ? prev : u));
+    }
+  };
+
+  const activateUser = async (id: string) => {
+    const prev = users.find(u => u.id === id);
+    setUsers(prev => prev.map(u => u.id === id ? { ...u, status: 'Active' as const } : u));
+    const { error } = await supabase.from('users').update({ status: 'Active' }).eq('id', id);
+    if (error) {
+      console.error('activateUser failed:', error.message);
       if (prev) setUsers(us => us.map(u => u.id === id ? prev : u));
     }
   };
@@ -911,12 +1015,13 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   return (
     <StateContext.Provider value={{
       providers, requests, policies, budgets, recommendations, outcomes, users, notifications,
-      channels, loading, error,
+      channels, enterpriseIntegrations, loading, error,
       updateBudgetLimit, togglePolicy, addPolicy,
       applyRecommendation, dismissRecommendation, toggleProvider,
-      inviteUser, deleteUser, updateUserRole,
-      sendTestNotification, updateChannelConfig,
-      routeGatewayRequest, resetSystemState
+      inviteUser, deleteUser, updateUserRole, activateUser,
+      sendTestNotification, updateChannelConfig, updateEnterpriseIntegration,
+      routeGatewayRequest, resetSystemState,
+      authSession, signOut, updatePassword
     }}>
       {children}
     </StateContext.Provider>
