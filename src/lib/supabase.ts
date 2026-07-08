@@ -7,6 +7,8 @@ if (!supabaseUrl || !supabaseAnonKey) {
   console.warn(
     'Supabase environment variables are missing. Please ensure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are set.'
   );
+} else {
+  console.log('[Peek] Supabase client initialized with URL:', supabaseUrl);
 }
 
 export const supabase = createClient(
