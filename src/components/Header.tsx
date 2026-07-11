@@ -16,8 +16,9 @@ export const Header: React.FC<HeaderProps> = ({
   setSearchQuery,
   onMenuToggle,
 }) => {
-  const { authSession, signOut } = useAppState();
+  const { authSession, signOut, notifications } = useAppState();
   const [showDropdown, setShowDropdown] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 md:px-8 h-16 bg-background/85 backdrop-blur-md border-b border-outline-variant">
@@ -61,9 +62,55 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
 
         <div className="flex items-center gap-1 text-on-surface-variant">
-          <span className="material-symbols-outlined p-2 hover:bg-surface-variant rounded-full cursor-pointer transition-colors text-[22px]" title="Notifications">
-            notifications
-          </span>
+          <div className="relative">
+            <span
+              onClick={() => {
+                setShowNotifications(!showNotifications);
+                setShowDropdown(false);
+              }}
+              className="material-symbols-outlined p-2 hover:bg-surface-variant rounded-full cursor-pointer transition-colors text-[22px]"
+              title="Notifications"
+            >
+              notifications
+            </span>
+            {notifications.length > 0 && (
+              <span className="absolute top-1 right-1 w-2 h-2 bg-rose-500 rounded-full animate-pulse border border-background"></span>
+            )}
+
+            {showNotifications && (
+              <div className="absolute right-0 mt-2 w-80 max-h-96 overflow-y-auto bg-surface-container-high border border-outline-variant rounded-xl shadow-2xl z-50">
+                <div className="px-4 py-3 border-b border-outline-variant/30 flex justify-between items-center bg-surface-container-highest sticky top-0">
+                  <h3 className="font-bold text-sm text-on-surface">Notifications</h3>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-primary font-bold bg-primary/10 px-2 py-0.5 rounded-full">{notifications.length} New</span>
+                    <button onClick={(e) => { e.stopPropagation(); setShowNotifications(false); }} className="hover:bg-surface-variant rounded-full text-on-surface-variant transition-colors flex items-center justify-center p-0.5">
+                      <span className="material-symbols-outlined text-[18px]">close</span>
+                    </button>
+                  </div>
+                </div>
+                <div className="p-2 space-y-1">
+                  {notifications.length === 0 ? (
+                    <div className="px-4 py-6 text-center text-sm text-on-surface-variant">
+                      <span className="material-symbols-outlined text-[32px] mb-2 opacity-50">notifications_paused</span>
+                      <p>You're all caught up!</p>
+                    </div>
+                  ) : (
+                    [...notifications].sort((a, b) => b.timestamp - a.timestamp).map((n, i) => (
+                      <div key={i} className="p-3 hover:bg-surface-variant rounded-lg transition-colors cursor-pointer border-l-2 border-primary/40 bg-surface-container/50">
+                        <div className="flex justify-between items-start mb-1">
+                          <h4 className="font-bold text-xs text-on-surface line-clamp-1">{n.title}</h4>
+                          <span className="text-[10px] text-on-surface-variant whitespace-nowrap ml-2">
+                            {new Date(n.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-on-surface-variant leading-snug line-clamp-2">{n.body}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
           <span
             onClick={() => setScreen('settings')}
             className="hidden sm:block material-symbols-outlined p-2 hover:bg-surface-variant rounded-full cursor-pointer transition-colors text-[22px]"
@@ -76,7 +123,10 @@ export const Header: React.FC<HeaderProps> = ({
         {/* User Profile / Dropdown */}
         <div className="relative">
           <button
-            onClick={() => setShowDropdown(!showDropdown)}
+            onClick={() => {
+              setShowDropdown(!showDropdown);
+              setShowNotifications(false);
+            }}
             className="flex items-center gap-2 focus:outline-none rounded-full hover:bg-surface-variant/30 p-1 transition-all"
           >
             <div className="w-8 h-8 rounded-full border border-outline-variant overflow-hidden bg-surface-container flex-shrink-0">

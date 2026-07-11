@@ -283,7 +283,7 @@ interface StateContextType {
   dismissRecommendation: (id: string) => Promise<void>;
   toggleProvider: (id: string, apiKey?: string) => Promise<void>;
   inviteUser: (name: string, email: string, role: string) => Promise<void>;
-  deleteUser: (id: string) => Promise<void>;
+  deleteUser: (id: string) => Promise<{ success: boolean; error?: string }>;
   updateUserRole: (id: string, role: string) => Promise<void>;
   activateUser: (id: string) => Promise<void>;
   sendTestNotification: (channelId: 'slack' | 'teams', channelName: string, destination: string) => Promise<void>;
@@ -681,18 +681,40 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
   }, [users]);
 
-  // Helper to transition Pending user to Active upon signing in
+  // Helper to transition Pending user to Active upon signing in.
+  // If the email isn't in the users table at all, create them on the fly
+  // so they're never locked out of the app.
   const handleStatusTransition = async (authUser: any) => {
-    // Look up user by email or ID in the public users table
-    const matchingUser = users.find(u => u.email.toLowerCase() === authUser.email?.toLowerCase());
-    if (matchingUser && matchingUser.status === 'Pending') {
-      console.log(`[Peek] Transitioning user ${matchingUser.email} from Pending to Active (Auth event detected)`);
-      // Update locally
-      setUsers(prev => prev.map(u => u.id === matchingUser.id ? { ...u, status: 'Active' as const, id: authUser.id } : u));
-      // Update in DB (also update the ID to match the auth.users ID if it was random before)
-      await supabase.from('users').update({ status: 'Active', id: authUser.id }).eq('email', matchingUser.email);
+    const email = authUser.email?.toLowerCase();
+    if (!email) return;
+
+    // Look up user by email in the public users table
+    const matchingUser = users.find(u => u.email.toLowerCase() === email);
+
+    if (matchingUser) {
+      if (matchingUser.status === 'Pending') {
+        console.log(`[Peek] Transitioning user ${matchingUser.email} from Pending to Active (Auth event detected)`);
+        // Update locally
+        setUsers(prev => prev.map(u => u.id === matchingUser.id ? { ...u, status: 'Active' as const, id: authUser.id } : u));
+        // Update in DB (also update the ID to match the auth.users ID if it was random before)
+        await supabase.from('users').update({ status: 'Active', id: authUser.id }).eq('email', matchingUser.email);
+      }
+      // Already Active — nothing to do
+    } else {
+      // Email not in Users & Permissions table — auto-create so they can access the app
+      console.log(`[Peek] Unknown email ${email} signed in — auto-creating user record as Active/Viewer`);
+      const newUser = {
+        id: authUser.id,
+        name: authUser.user_metadata?.name || email.split('@')[0],
+        email: authUser.email,
+        role: (authUser.user_metadata?.role as string) || 'Viewer',
+        status: 'Active' as const,
+      };
+      setUsers(prev => [...prev, newUser]);
+      await supabase.from('users').upsert(newUser, { onConflict: 'email' });
     }
   };
+
 
   const signOut = async () => {
     await supabase.auth.signOut();
@@ -803,7 +825,9 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (error) {
       console.error('deleteUser failed:', error.message);
       setUsers(prev); // rollback
+      return { success: false, error: error.message };
     }
+    return { success: true };
   };
 
   const updateUserRole = async (id: string, role: string) => {

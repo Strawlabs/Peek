@@ -12,6 +12,14 @@ CREATE TABLE IF NOT EXISTS public.providers (
     updated_at timestamp with time zone DEFAULT now()
 );
 
+-- users table
+CREATE TABLE IF NOT EXISTS public.users (
+    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    email text UNIQUE NOT NULL,
+    hashed_password text NOT NULL,
+    created_at timestamp with time zone DEFAULT now()
+);
+
 -- organizations table
 CREATE TABLE IF NOT EXISTS public.organizations (
     id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -21,13 +29,6 @@ CREATE TABLE IF NOT EXISTS public.organizations (
     updated_at timestamp with time zone DEFAULT now()
 );
 
--- users table
-CREATE TABLE IF NOT EXISTS public.users (
-    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-    email text UNIQUE NOT NULL,
-    hashed_password text NOT NULL,
-    created_at timestamp with time zone DEFAULT now()
-);
 
 -- profiles table
 CREATE TABLE IF NOT EXISTS public.profiles (

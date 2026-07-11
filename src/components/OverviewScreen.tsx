@@ -7,22 +7,79 @@ interface OverviewScreenProps {
 
 export const OverviewScreen: React.FC<OverviewScreenProps> = ({ setScreen }) => {
   const { requests, policies, recommendations } = useAppState();
+  const [toast, setToast] = React.useState<{ message: string; type: 'success' | 'info' } | null>(null);
+  const [timeRange, setTimeRange] = React.useState<'30d' | '7d' | 'all'>('30d');
 
-  const totalRequests = requests.length;
-  const totalCost = requests.reduce((sum, r) => sum + r.cost, 0);
+  const showToast = (message: string, type: 'success' | 'info') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const filteredRequests = requests.filter(r => {
+    if (timeRange === 'all') return true;
+    const now = Date.now();
+    const daysInMs = (timeRange === '30d' ? 30 : 7) * 24 * 60 * 60 * 1000;
+    return (now - r.timestamp) <= daysInMs;
+  });
+
+  const totalRequests = filteredRequests.length;
+  const totalCost = filteredRequests.reduce((sum, r) => sum + r.cost, 0);
   const activePolicies = policies.filter(p => p.active).length;
   const activeRecsCount = recommendations.filter(r => r.status === 'active').length;
 
   const averageLatency = totalRequests > 0 
-    ? requests.reduce((sum, r) => sum + r.latency, 0) / totalRequests 
+    ? filteredRequests.reduce((sum, r) => sum + r.latency, 0) / totalRequests 
     : 0;
 
-  const latestRequests = [...requests]
+  const latestRequests = [...filteredRequests]
     .sort((a, b) => b.timestamp - a.timestamp)
     .slice(0, 5);
 
+  const handleExportCSV = () => {
+    const headers = ['Time', 'Team', 'Workflow', 'Provider', 'Model', 'Cost', 'Latency', 'Status'];
+    const rows = filteredRequests.map(r => [
+      new Date(r.timestamp).toISOString(),
+      r.team,
+      r.workflow,
+      r.provider,
+      r.model,
+      r.cost.toString(),
+      r.latency.toString(),
+      r.status
+    ]);
+    const csvContent = [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `peek-telemetry-${timeRange}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast(`Exported ${filteredRequests.length} records to CSV.`, 'success');
+  };
+
+  const toggleTimeRange = () => {
+    const next = timeRange === '30d' ? '7d' : timeRange === '7d' ? 'all' : '30d';
+    setTimeRange(next);
+    showToast(`Date range updated to ${next === '30d' ? 'Last 30 Days' : next === '7d' ? 'Last 7 Days' : 'All Time'}.`, 'info');
+  };
+
+  const timeRangeLabel = timeRange === '30d' ? 'Last 30 Days' : timeRange === '7d' ? 'Last 7 Days' : 'All Time';
+
   return (
     <div className="space-y-6">
+      {/* Toast Notification */}
+      {toast && (
+        <div className={`fixed bottom-6 right-6 z-50 flex items-start gap-3 px-5 py-4 rounded-xl shadow-2xl border text-sm font-medium max-w-sm animate-slide-in ${
+          toast.type === 'success' ? 'bg-emerald-950/90 border-emerald-700/50 text-emerald-200' :
+          'bg-cyan-950/90 border-cyan-700/50 text-cyan-200'
+        }`}>
+          {toast.type === 'success' ? '✅ ' : 'ℹ️ '}
+          {toast.message}
+        </div>
+      )}
+
       <header className="mb-8 flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
           <nav className="flex items-center gap-2 text-body-sm text-on-surface-variant mb-2">
@@ -36,11 +93,11 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({ setScreen }) => 
           </p>
         </div>
         <div className="flex gap-4">
-          <button className="flex items-center gap-2 border border-outline-variant px-4 py-2 rounded-lg font-label-md text-label-md text-on-surface hover:bg-surface-variant transition-all">
+          <button onClick={handleExportCSV} className="flex items-center gap-2 border border-outline-variant px-4 py-2 rounded-lg font-label-md text-label-md text-on-surface hover:bg-surface-variant transition-all">
             <span className="material-symbols-outlined text-[18px]">download</span> Export Report
           </button>
-          <button className="flex items-center gap-2 bg-primary text-on-primary px-4 py-2 rounded-lg font-label-md text-label-md hover:opacity-90 transition-all shadow-md shadow-primary/10">
-            <span className="material-symbols-outlined text-[18px]">calendar_today</span> Last 30 Days
+          <button onClick={toggleTimeRange} className="flex items-center gap-2 bg-primary text-on-primary px-4 py-2 rounded-lg font-label-md text-label-md hover:opacity-90 transition-all shadow-md shadow-primary/10 w-44 justify-center">
+            <span className="material-symbols-outlined text-[18px]">calendar_today</span> {timeRangeLabel}
           </button>
         </div>
       </header>
@@ -49,7 +106,7 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({ setScreen }) => 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="glass-card rounded-xl p-6 flex flex-col justify-between h-36">
           <div>
-            <span className="text-[10px] font-bold text-outline uppercase tracking-wider">TOTAL SPEND (30d)</span>
+            <span className="text-[10px] font-bold text-outline uppercase tracking-wider">TOTAL SPEND ({timeRange})</span>
             <h3 className="text-headline-lg text-primary font-bold mt-1">
               ${totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </h3>
@@ -156,7 +213,7 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({ setScreen }) => 
                 <span className="text-body-md font-bold">Average Latency</span>
               </div>
               <p className="text-xl font-bold text-on-surface mt-1">{averageLatency.toFixed(2)}s</p>
-              <p className="text-xs text-on-surface-variant mt-1">Across 30 days of production data flow.</p>
+              <p className="text-xs text-on-surface-variant mt-1">Across {timeRangeLabel.toLowerCase()} of production data flow.</p>
             </div>
 
             <div className="p-3 bg-surface-container rounded-lg border border-outline-variant">
@@ -165,7 +222,7 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({ setScreen }) => 
                 <span className="text-body-md font-bold">Security Breaches Blocked</span>
               </div>
               <p className="text-xl font-bold text-on-surface mt-1">
-                {requests.filter(r => r.status.includes('Blocked')).length} Requests
+                {filteredRequests.filter(r => r.status.includes('Blocked')).length} Requests
               </p>
               <p className="text-xs text-on-surface-variant mt-1">PII leakage prevented by Gateway rules.</p>
             </div>
@@ -174,7 +231,7 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({ setScreen }) => 
       </div>
 
       {/* ─── Risk Alerts Panel (Task 6) ─── */}
-      <RiskAlertsPanel requests={requests} setScreen={setScreen} />
+      <RiskAlertsPanel requests={filteredRequests} setScreen={setScreen} />
     </div>
   );
 };
