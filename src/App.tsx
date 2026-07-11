@@ -13,6 +13,7 @@ import { UsersScreen } from './components/UsersScreen';
 import { SettingsScreen } from './components/SettingsScreen';
 import { ReportsScreen } from './components/ReportsScreen';
 import { IntegrationsScreen } from './components/IntegrationsScreen';
+import { LoginScreen } from './components/LoginScreen';
 
 import { useAppState } from './context/StateContext';
 import { supabase } from './lib/supabase';
@@ -116,7 +117,7 @@ function SetPasswordModal({ onClose }: { onClose: () => void }) {
 }
 
 function AppShell() {
-  const { loading, error } = useAppState();
+  const { loading, error, authSession } = useAppState();
   const [currentScreen, setScreen] = useState('overview');
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -213,6 +214,17 @@ function AppShell() {
       default: return <OverviewScreen setScreen={setScreen} />;
     }
   };
+
+  if (!authSession) {
+    return (
+      <>
+        <LoginScreen />
+        {showSetPassword && (
+          <SetPasswordModal onClose={() => setShowSetPassword(false)} />
+        )}
+      </>
+    );
+  }
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-background">
