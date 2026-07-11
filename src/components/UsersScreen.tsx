@@ -25,9 +25,11 @@ export const UsersScreen: React.FC = () => {
     setSending(true);
 
     try {
-      // Call the Edge Function — it sends the real invitation email
+      // Call the Edge Function — it sends the real invitation email.
+      // Pass redirectTo from the browser so it always points to THIS app,
+      // not whatever Site URL is set in the Supabase dashboard.
       const { data, error } = await supabase.functions.invoke('invite-user', {
-        body: { email, name, role },
+        body: { email, name, role, redirectTo: window.location.origin + '/' },
       });
 
       if (error || data?.error) {
@@ -63,6 +65,8 @@ export const UsersScreen: React.FC = () => {
     }
   };
 
+
+
   const handleActivate = async (userId: string) => {
     setActivatingId(userId);
     try {
@@ -72,6 +76,16 @@ export const UsersScreen: React.FC = () => {
       setActivatingId(null);
     }
   };
+
+  const handleDelete = async (userId: string) => {
+    const res = await deleteUser(userId);
+    if (res && !res.success) {
+      showToast(`❌ Failed to delete user: ${res.error}`, 'error');
+    } else {
+      showToast('✅ User removed successfully.', 'success');
+    }
+  };
+
 
   return (
     <div className="space-y-6">
@@ -230,7 +244,7 @@ export const UsersScreen: React.FC = () => {
                       </button>
                     )}
                     <button
-                      onClick={() => deleteUser(user.id)}
+                      onClick={() => handleDelete(user.id)}
                       className="text-rose-400 hover:text-rose-300 transition-colors"
                       title="Remove user"
                     >

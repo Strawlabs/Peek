@@ -15,6 +15,7 @@ import { ReportsScreen } from './components/ReportsScreen';
 import { IntegrationsScreen } from './components/IntegrationsScreen';
 
 import { useAppState } from './context/StateContext';
+import { supabase } from './lib/supabase';
 
 function SetPasswordModal({ onClose }: { onClose: () => void }) {
   const { updatePassword, authSession } = useAppState();
@@ -62,9 +63,8 @@ function SetPasswordModal({ onClose }: { onClose: () => void }) {
         </div>
 
         {toast && (
-          <div className={`p-3 rounded-lg text-xs font-medium ${
-            toast.success ? 'bg-emerald-950/80 border border-emerald-700/50 text-emerald-300' : 'bg-rose-950/80 border border-rose-700/50 text-rose-300'
-          }`}>
+          <div className={`p-3 rounded-lg text-xs font-medium ${toast.success ? 'bg-emerald-950/80 border border-emerald-700/50 text-emerald-300' : 'bg-rose-950/80 border border-rose-700/50 text-rose-300'
+            }`}>
             {toast.message}
           </div>
         )}
@@ -123,15 +123,49 @@ function AppShell() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [showSetPassword, setShowSetPassword] = useState(false);
 
-  // Detect invite redirect on load
+  // Detect invite redirect or direct token hash login on load
   useEffect(() => {
-    const isInvite = window.location.hash.includes('type=invite') || window.location.hash.includes('type=recovery');
-    if (isInvite) {
-      setShowSetPassword(true);
-      // Clean URL hash so refreshing doesn't keep triggering modal
-      window.history.replaceState(null, '', window.location.pathname + window.location.search);
-    }
+    const handleHashAuth = async () => {
+      const hash = window.location.hash;
+      if (!hash) return;
+
+      const isStandardRedirect = hash.includes('type=invite') || hash.includes('type=recovery');
+      const hasTokenHash = hash.includes('token_hash=');
+
+      if (hasTokenHash) {
+        // Parse token_hash and type from hash params (e.g. #token_hash=xxx&type=invite)
+        const rawHash = hash.substring(1); // strip the leading '#'
+        const params = new URLSearchParams(rawHash);
+        const tokenHash = params.get('token_hash');
+        const type = params.get('type') || 'invite';
+
+        if (tokenHash) {
+          console.log(`[Peek] Verifying direct login token...`);
+          const { error } = await supabase.auth.verifyOtp({
+            token_hash: tokenHash,
+            type: type as any,
+          });
+
+          if (error) {
+            console.error('[Peek] Direct verification failed:', error.message);
+            alert(`Direct login link failed: ${error.message}`);
+          } else {
+            console.log('[Peek] Direct verification succeeded! Logging user in.');
+            setShowSetPassword(true);
+          }
+        }
+        // Clean URL hash
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      } else if (isStandardRedirect) {
+        setShowSetPassword(true);
+        // Clean URL hash so refreshing doesn't keep triggering modal
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
+    };
+
+    handleHashAuth();
   }, []);
+
 
   if (loading) {
     return (
@@ -166,17 +200,17 @@ function AppShell() {
 
   const renderScreen = () => {
     switch (currentScreen) {
-      case 'overview':    return <OverviewScreen setScreen={setScreen} />;
-      case 'spend':       return <SpendAnalyticsScreen />;
-      case 'governance':  return <GovernanceCenterScreen />;
-      case 'intelligence':return <IntelligenceCenterScreen />;
-      case 'tba':         return <TokenBenefitScreen />;
-      case 'reports':     return <ReportsScreen />;
-      case 'integrations':return <IntegrationsScreen />;
-      case 'sandbox':     return <ProxyPlaygroundScreen />;
-      case 'users':       return <UsersScreen />;
-      case 'settings':    return <SettingsScreen />;
-      default:            return <OverviewScreen setScreen={setScreen} />;
+      case 'overview': return <OverviewScreen setScreen={setScreen} />;
+      case 'spend': return <SpendAnalyticsScreen />;
+      case 'governance': return <GovernanceCenterScreen />;
+      case 'intelligence': return <IntelligenceCenterScreen />;
+      case 'tba': return <TokenBenefitScreen />;
+      case 'reports': return <ReportsScreen />;
+      case 'integrations': return <IntegrationsScreen />;
+      case 'sandbox': return <ProxyPlaygroundScreen />;
+      case 'users': return <UsersScreen />;
+      case 'settings': return <SettingsScreen />;
+      default: return <OverviewScreen setScreen={setScreen} />;
     }
   };
 
