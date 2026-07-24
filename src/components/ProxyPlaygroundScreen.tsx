@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useAppState } from '../context/StateContext';
+import { supabase } from '../lib/supabase';
 
 export const ProxyPlaygroundScreen: React.FC = () => {
-  const { providers, routeGatewayRequest } = useAppState();
+  const { providers, routeGatewayRequest, apiKeys } = useAppState();
   const [prompt, setPrompt] = useState('Process workflow tasks for Support Chatbot');
   const [provider, setProvider] = useState('openai');
   const [model, setModel] = useState('gpt-4o');
@@ -10,27 +11,69 @@ export const ProxyPlaygroundScreen: React.FC = () => {
   const [environment, setEnvironment] = useState('production');
   const [workflow, setWorkflow] = useState('CI/CD Review');
   const [customer, setCustomer] = useState('Alphabet Corp');
+  const [gatewayMode, setGatewayMode] = useState<'simulation' | 'live'>('simulation');
+  const [selectedKey, setSelectedKey] = useState<string>('');
   const [trace, setTrace] = useState<string[]>([]);
-  const [result, setResult] = useState<{ success: boolean; cost: number; tokens: number; latency: number } | null>(null);
+  const [result, setResult] = useState<{ success: boolean; cost: number; tokens: number; latency: number; responseText?: string } | null>(null);
   const [routing, setRouting] = useState(false);
 
   const connectedProviders = providers.filter((p) => p.status === 'connected');
   const selectedProvider = providers.find((p) => p.id === provider);
   const availableModels = selectedProvider?.models ?? [];
+  const activeKeys = apiKeys.filter((k) => k.active);
 
   const handleRoute = async () => {
     setRouting(true);
     setTrace([]);
     setResult(null);
     try {
-      const response = await routeGatewayRequest(prompt, provider, model, team, environment, workflow, customer);
-      setTrace(response.trace);
-      setResult({
-        success: response.success,
-        cost: response.cost,
-        tokens: response.tokens,
-        latency: response.latency,
-      });
+      if (gatewayMode === 'live') {
+        const traceLog: string[] = [
+          `[SYSTEM] Connecting to live Edge Function endpoint: /v1-chat-completions`,
+          `[GATEWAY] Headers: X-Peek-Team=${team}, X-Peek-Workflow=${workflow}, X-Peek-Customer=${customer}`,
+          `[GATEWAY] Auth Token: ${selectedKey ? 'pk_live_...' : 'Public Demo Bearer'}`,
+          `[POLICY] Running server-side PII and model policy inspection...`
+        ];
+
+        const keyHeader = selectedKey ? `pk_live_${selectedKey}` : 'pk_live_eng_demo';
+        const { data, error } = await supabase.functions.invoke('v1-chat-completions', {
+          body: { model, messages: [{ role: 'user', content: prompt }] },
+          headers: {
+            'Authorization': `Bearer ${keyHeader}`,
+            'X-Peek-Team': team,
+            'X-Peek-Workflow': workflow,
+            'X-Peek-Customer': customer
+          }
+        });
+
+        if (error || data?.error) {
+          const errMsg = data?.error?.message || error?.message || 'Gateway Error';
+          traceLog.push(`[BLOCK] ${errMsg}`);
+          setTrace(traceLog);
+          setResult({ success: false, cost: 0, tokens: 0, latency: 0.02, responseText: errMsg });
+        } else {
+          traceLog.push(`[POLICY] Governance checks passed.`);
+          traceLog.push(`[PROXY] Upstream completed in ${data.peek_telemetry?.latency || 0.4}s. Cost: $${data.peek_telemetry?.cost?.toFixed(5) || '0.00000'}`);
+          traceLog.push(`[TELEMETRY] Logged packet to Supabase requests table.`);
+          setTrace(traceLog);
+          setResult({
+            success: true,
+            cost: data.peek_telemetry?.cost || 0,
+            tokens: data.usage?.total_tokens || 0,
+            latency: data.peek_telemetry?.latency || 0.4,
+            responseText: data.choices?.[0]?.message?.content || ''
+          });
+        }
+      } else {
+        const response = await routeGatewayRequest(prompt, provider, model, team, environment, workflow, customer);
+        setTrace(response.trace);
+        setResult({
+          success: response.success,
+          cost: response.cost,
+          tokens: response.tokens,
+          latency: response.latency,
+        });
+      }
     } finally {
       setRouting(false);
     }
@@ -38,17 +81,69 @@ export const ProxyPlaygroundScreen: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <header className="mb-8">
-        <nav className="flex items-center gap-2 text-body-sm text-on-surface-variant mb-2">
-          <span>Simulation</span>
-          <span className="material-symbols-outlined text-[14px]">chevron_right</span>
-          <span className="text-primary font-bold">Proxy Playground</span>
-        </nav>
-        <h2 className="font-headline-lg text-headline-lg text-on-surface">Enterprise AI Gateway Playground</h2>
-        <p className="font-body-md text-body-md text-on-surface-variant mt-1">
-          Simulate live proxy routing through Peek&apos;s governance layer — policies, budgets, and telemetry in real time.
-        </p>
+      <header className="mb-6 flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+        <div>
+          <nav className="flex items-center gap-2 text-body-sm text-on-surface-variant mb-2">
+            <span>Simulation & Gateway</span>
+            <span className="material-symbols-outlined text-[14px]">chevron_right</span>
+            <span className="text-primary font-bold">Proxy Playground</span>
+          </nav>
+          <h2 className="font-headline-lg text-headline-lg text-on-surface">Enterprise AI Gateway Playground</h2>
+          <p className="font-body-md text-body-md text-on-surface-variant mt-1">
+            Simulate or route live API requests through Peek&apos;s governance layer — policies, budgets, and telemetry in real time.
+          </p>
+        </div>
+
+        {/* Mode Switcher */}
+        <div className="flex bg-surface-container p-1 rounded-xl border border-outline-variant">
+          <button
+            onClick={() => setGatewayMode('simulation')}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg font-label-md text-label-md transition-all ${
+              gatewayMode === 'simulation' ? 'bg-primary text-on-primary shadow-sm' : 'text-on-surface-variant hover:text-on-surface'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[16px]">science</span>
+            Simulation Mode
+          </button>
+          <button
+            onClick={() => setGatewayMode('live')}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg font-label-md text-label-md transition-all ${
+              gatewayMode === 'live' ? 'bg-emerald-500 text-slate-950 font-bold shadow-sm' : 'text-on-surface-variant hover:text-on-surface'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[16px]">bolt</span>
+            Live Edge Gateway Mode
+          </button>
+        </div>
       </header>
+
+      {gatewayMode === 'live' && (
+        <div className="p-4 bg-emerald-950/40 border border-emerald-800/30 rounded-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-xs text-emerald-300">
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-[20px] text-emerald-400">cloud_done</span>
+            <span>
+              <strong>Live Edge Gateway Active:</strong> Routing requests to Deno Edge Function endpoint <code className="bg-emerald-900/60 px-1.5 py-0.5 rounded font-mono">/v1-chat-completions</code>.
+            </span>
+          </div>
+          {activeKeys.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-on-surface-variant font-bold">Use Virtual Key:</span>
+              <select
+                value={selectedKey}
+                onChange={(e) => setSelectedKey(e.target.value)}
+                className="bg-surface-container border border-emerald-800/40 rounded px-2 py-1 text-xs text-emerald-300 font-mono focus:outline-none"
+              >
+                <option value="">Default Demo Key (pk_live_demo)</option>
+                {activeKeys.map((k) => (
+                  <option key={k.id} value={k.key_prefix}>
+                    {k.team} - {k.name} ({k.key_prefix}_...)
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="glass-card rounded-xl p-6 space-y-4">

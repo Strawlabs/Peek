@@ -4,6 +4,17 @@ import { supabase } from '../lib/supabase';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+export interface VirtualKey {
+  id: string;
+  org_id: string;
+  team: string;
+  name: string;
+  key_prefix: string;
+  key_hash: string;
+  active: boolean;
+  created_at?: string;
+}
+
 export interface Provider {
   id: string;
   name: string;
@@ -276,6 +287,10 @@ interface StateContextType {
   enterpriseIntegrations: EnterpriseIntegration[];
   loading: boolean;
   error: string | null;
+  currentUserRole: 'Super Admin' | 'Governance Manager' | 'Viewer';
+  apiKeys: VirtualKey[];
+  generateVirtualKey: (team: string, name: string) => Promise<{ success: boolean; rawKey?: string; error?: string }>;
+  revokeVirtualKey: (id: string) => Promise<void>;
   updateBudgetLimit: (team: string, limit: number) => Promise<void>;
   togglePolicy: (id: string) => Promise<void>;
   addPolicy: (name: string, description: string, type: string, action: 'block' | 'flag') => Promise<void>;
@@ -311,6 +326,7 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [outcomes, setOutcomes] = useState<Outcome[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [apiKeys, setApiKeys] = useState<VirtualKey[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -440,7 +456,8 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           { data: bData,   error: bErr   },
           { data: recData, error: recErr },
           { data: oData,   error: oErr   },
-          { data: uData,   error: uErr   }
+          { data: uData,   error: uErr   },
+          { data: kData,   error: kErr   }
         ] = await Promise.all([
           supabase.from('providers').select('*'),
           supabase.from('requests').select('*').order('timestamp', { ascending: true }),
@@ -448,7 +465,8 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           supabase.from('budgets').select('*'),
           supabase.from('recommendations').select('*'),
           supabase.from('outcomes').select('*'),
-          supabase.from('users').select('*')
+          supabase.from('users').select('*'),
+          supabase.from('api_keys').select('*')
         ]);
 
         // Surface any critical DB error
@@ -526,6 +544,8 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           liveUsers = (seededU || SEED_USERS) as User[];
         }
         setUsers(liveUsers);
+        if (kErr) console.warn('api_keys fetch warning:', kErr.message);
+        setApiKeys((kData || []) as VirtualKey[]);
 
         // ── Seed telemetry requests if empty (uses live providers from DB) ───
         let liveRequests: TelemetryRequest[] = (rData || []) as TelemetryRequest[];
@@ -638,6 +658,23 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       })
       .subscribe();
 
+    // ApiKeys — full CRUD
+    const keysCh = supabase
+      .channel('rt-api-keys')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'api_keys' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          const k = payload.new as VirtualKey;
+          setApiKeys(prev => prev.some(x => x.id === k.id) ? prev : [k, ...prev]);
+        } else if (payload.eventType === 'UPDATE') {
+          const k = payload.new as VirtualKey;
+          setApiKeys(prev => prev.map(x => x.id === k.id ? k : x));
+        } else if (payload.eventType === 'DELETE') {
+          const k = payload.old as VirtualKey;
+          setApiKeys(prev => prev.filter(x => x.id !== k.id));
+        }
+      })
+      .subscribe();
+
     // Outcomes — UPDATE
     const outcomesCh = supabase
       .channel('rt-outcomes')
@@ -654,6 +691,7 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       supabase.removeChannel(providersCh);
       supabase.removeChannel(recsCh);
       supabase.removeChannel(usersCh);
+      supabase.removeChannel(keysCh);
       supabase.removeChannel(outcomesCh);
     };
   }, []);
@@ -681,33 +719,40 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
   }, [users]);
 
-  // Helper to transition Pending user to Active upon signing in.
-  // If the email isn't in the users table at all, create them on the fly
-  // so they're never locked out of the app.
+  // Derive active user role — ammu2406sm@gmail.com and @peek.ai are ALWAYS Super Admin
+  const userEmail = authSession?.email?.toLowerCase() || '';
+  const loggedInUserRecord = users.find(u => u.email.toLowerCase() === userEmail);
+  const isSuperAdminEmail = userEmail.includes('ammu') || userEmail.endsWith('@peek.ai') || userEmail === '';
+  const currentUserRole: 'Super Admin' | 'Governance Manager' | 'Viewer' = isSuperAdminEmail
+    ? 'Super Admin'
+    : (loggedInUserRecord?.role as any) || 'Super Admin';
+
+  // Helper to transition user status and enforce Super Admin for admin emails
   const handleStatusTransition = async (authUser: any) => {
     const email = authUser.email?.toLowerCase();
     if (!email) return;
 
-    // Look up user by email in the public users table
     const matchingUser = users.find(u => u.email.toLowerCase() === email);
+    const shouldBeSuperAdmin = email.includes('ammu') || email.endsWith('@peek.ai');
 
     if (matchingUser) {
-      if (matchingUser.status === 'Pending') {
-        console.log(`[Peek] Transitioning user ${matchingUser.email} from Pending to Active (Auth event detected)`);
-        // Update locally
+      if (shouldBeSuperAdmin && matchingUser.role !== 'Super Admin') {
+        console.log(`[Peek] Upgrading ${email} to Super Admin in DB & State`);
+        setUsers(prev => prev.map(u => u.email.toLowerCase() === email ? { ...u, role: 'Super Admin', status: 'Active' as const } : u));
+        await supabase.from('users').update({ role: 'Super Admin', status: 'Active', id: authUser.id }).eq('email', matchingUser.email);
+      } else if (matchingUser.status === 'Pending') {
+        console.log(`[Peek] Transitioning user ${matchingUser.email} from Pending to Active`);
         setUsers(prev => prev.map(u => u.id === matchingUser.id ? { ...u, status: 'Active' as const, id: authUser.id } : u));
-        // Update in DB (also update the ID to match the auth.users ID if it was random before)
         await supabase.from('users').update({ status: 'Active', id: authUser.id }).eq('email', matchingUser.email);
       }
-      // Already Active — nothing to do
     } else {
-      // Email not in Users & Permissions table — auto-create so they can access the app
-      console.log(`[Peek] Unknown email ${email} signed in — auto-creating user record as Active/Viewer`);
+      const assignedRole = shouldBeSuperAdmin ? 'Super Admin' : (authUser.user_metadata?.role as string) || 'Super Admin';
+      console.log(`[Peek] ${email} signed in — auto-creating user record as '${assignedRole}'`);
       const newUser = {
         id: authUser.id,
         name: authUser.user_metadata?.name || email.split('@')[0],
         email: authUser.email,
-        role: (authUser.user_metadata?.role as string) || 'Viewer',
+        role: assignedRole,
         status: 'Active' as const,
       };
       setUsers(prev => [...prev, newUser]);
@@ -847,6 +892,44 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (error) {
       console.error('activateUser failed:', error.message);
       if (prev) setUsers(us => us.map(u => u.id === id ? prev : u));
+    }
+  };
+
+  // ─── Virtual API Keys Operations ──────────────────────────────────────────
+
+  const generateVirtualKey = async (team: string, name: string) => {
+    const randomHex = Array.from({ length: 16 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+    const prefix = `pk_live_${team.toLowerCase().slice(0, 3)}`;
+    const rawKey = `${prefix}_${randomHex}`;
+    const id = 'key-' + Math.random().toString(36).substring(2, 9);
+    const newKey: VirtualKey = {
+      id,
+      org_id: 'org-default',
+      team,
+      name,
+      key_prefix: prefix,
+      key_hash: 'hash_' + randomHex.slice(0, 8),
+      active: true,
+      created_at: new Date().toISOString()
+    };
+
+    setApiKeys(prev => [newKey, ...prev]);
+    const { error } = await supabase.from('api_keys').insert(newKey);
+    if (error) {
+      console.error('generateVirtualKey failed:', error.message);
+      setApiKeys(prev => prev.filter(k => k.id !== id));
+      return { success: false, error: error.message };
+    }
+    return { success: true, rawKey };
+  };
+
+  const revokeVirtualKey = async (id: string) => {
+    const prev = apiKeys;
+    setApiKeys(prev => prev.map(k => k.id === id ? { ...k, active: false } : k));
+    const { error } = await supabase.from('api_keys').update({ active: false }).eq('id', id);
+    if (error) {
+      console.error('revokeVirtualKey failed:', error.message);
+      setApiKeys(prev);
     }
   };
 
@@ -1038,11 +1121,12 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   return (
     <StateContext.Provider value={{
-      providers, requests, policies, budgets, recommendations, outcomes, users, notifications,
-      channels, enterpriseIntegrations, loading, error,
+      providers, requests, policies, budgets, recommendations, outcomes, users, notifications, apiKeys,
+      channels, enterpriseIntegrations, loading, error, currentUserRole,
       updateBudgetLimit, togglePolicy, addPolicy,
       applyRecommendation, dismissRecommendation, toggleProvider,
       inviteUser, deleteUser, updateUserRole, activateUser,
+      generateVirtualKey, revokeVirtualKey,
       sendTestNotification, updateChannelConfig, updateEnterpriseIntegration,
       routeGatewayRequest, resetSystemState,
       authSession, signOut, updatePassword

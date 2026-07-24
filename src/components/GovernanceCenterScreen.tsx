@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAppState } from '../context/StateContext';
 
 export const GovernanceCenterScreen: React.FC = () => {
-  const { policies, budgets, requests, togglePolicy, addPolicy, updateBudgetLimit } = useAppState();
+  const { policies, budgets, requests, togglePolicy, addPolicy, updateBudgetLimit, currentUserRole } = useAppState();
   
   // Tab State: 'policies' | 'audit_logs'
   const [activeTab, setActiveTab] = useState<'policies' | 'audit_logs'>('policies');
@@ -33,6 +33,7 @@ export const GovernanceCenterScreen: React.FC = () => {
   };
 
   const startEditBudget = (team: string, limit: number) => {
+    if (currentUserRole === 'Viewer') return;
     setEditingBudgetTeam(team);
     setEditingBudgetLimit(limit);
   };
@@ -83,7 +84,7 @@ export const GovernanceCenterScreen: React.FC = () => {
           </p>
         </div>
         
-        {activeTab === 'policies' && (
+        {activeTab === 'policies' && currentUserRole !== 'Viewer' && (
           <button
             onClick={() => setShowAddForm(!showAddForm)}
             className="flex items-center gap-2 bg-primary text-on-primary px-4 py-2 rounded-lg font-label-md text-label-md hover:opacity-90 transition-all shadow-md shadow-primary/10"

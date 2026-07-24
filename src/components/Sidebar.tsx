@@ -1,4 +1,5 @@
 import React from 'react';
+import { useAppState } from '../context/StateContext';
 
 interface SidebarProps {
   currentScreen: string;
@@ -8,6 +9,8 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ currentScreen, setScreen, mobileOpen, setMobileOpen }) => {
+  const { currentUserRole, authSession } = useAppState();
+
   const menuItems = [
     { id: 'overview', name: 'Executive Overview', icon: 'dashboard' },
     { id: 'spend', name: 'AI Spend Analytics', icon: 'payments' },
@@ -16,13 +19,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentScreen, setScreen, mobi
     { id: 'tba', name: 'Token Benefit Analysis™', icon: 'generating_tokens' },
     { id: 'reports', name: 'Reports Center', icon: 'description' },
     { id: 'integrations', name: 'Integrations', icon: 'extension' },
-  ];
+  ].filter(item => {
+    if (currentUserRole === 'Viewer' && item.id === 'integrations') return false;
+    return true;
+  });
 
   const adminItems = [
     { id: 'sandbox', name: 'Proxy Playground', icon: 'terminal', highlight: true },
     { id: 'users', name: 'Users & Permissions', icon: 'group' },
     { id: 'settings', name: 'Organization Settings', icon: 'settings' },
-  ];
+  ].filter(item => {
+    if (currentUserRole === 'Viewer' && item.id === 'users') return false;
+    return true;
+  });
 
   const navigate = (id: string) => {
     setScreen(id);
@@ -50,8 +59,21 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentScreen, setScreen, mobi
       >
         <div className="flex flex-col gap-1 overflow-y-auto custom-scrollbar flex-1 min-h-0 pt-4">
           <div className="mb-4 px-2">
-            <h2 className="font-headline-sm text-headline-sm font-black text-on-surface">Peek Enterprise</h2>
-            <p className="font-body-sm text-body-sm text-on-surface-variant opacity-70">AI Governance Platform</p>
+            <div className="flex items-center justify-between">
+              <h2 className="font-headline-sm text-headline-sm font-black text-on-surface">Peek Enterprise</h2>
+              <span className={`px-2 py-0.5 rounded text-[9px] uppercase font-extrabold border ${
+                currentUserRole === 'Super Admin' 
+                  ? 'bg-primary/20 text-primary border-primary/40'
+                  : currentUserRole === 'Governance Manager'
+                  ? 'bg-amber-950/50 text-amber-400 border-amber-800/40'
+                  : 'bg-surface-container text-outline border-outline-variant'
+              }`}>
+                {currentUserRole}
+              </span>
+            </div>
+            <p className="font-body-sm text-body-sm text-on-surface-variant opacity-70 truncate mt-0.5">
+              {authSession?.email || 'AI Governance Platform'}
+            </p>
           </div>
 
           {menuItems.map((item) => (

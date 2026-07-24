@@ -2,7 +2,7 @@ import React from 'react';
 import { useAppState } from '../context/StateContext';
 
 export const IntelligenceCenterScreen: React.FC = () => {
-  const { recommendations, applyRecommendation, dismissRecommendation } = useAppState();
+  const { recommendations, applyRecommendation, dismissRecommendation, currentUserRole } = useAppState();
 
   const activeRecs = recommendations.filter((r) => r.status === 'active');
   const appliedRecs = recommendations.filter((r) => r.status === 'applied');
@@ -83,7 +83,7 @@ export const IntelligenceCenterScreen: React.FC = () => {
                 <p className="text-xs text-on-surface-variant">Confidence: {rec.confidence}%</p>
               </div>
             </div>
-            {rec.status === 'active' && (
+            {rec.status === 'active' && currentUserRole !== 'Viewer' && (
               <div className="flex gap-3 pt-2 border-t border-outline-variant/30">
                 <button
                   onClick={() => applyRecommendation(rec.id)}

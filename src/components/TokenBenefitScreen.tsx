@@ -748,28 +748,25 @@ export const TokenBenefitScreen: React.FC = () => {
                 <div className="glass-card rounded-xl p-6 space-y-4">
                   <h4 className="font-bold text-on-surface text-body-lg">Implementation Steps</h4>
                   <div className="space-y-3">
-                    {[
-                      result.resultType === 'Rule-Based' && [
+                    {((
+                      result.resultType === 'Rule-Based' ? [
                         { id: '1', label: 'Write local script using regex / JSON validator' },
                         { id: '2', label: 'Disable current API connections to GPT-4o for this workflow' },
                         { id: '3', label: 'Deploy local code and run tests' }
-                      ],
-                      result.resultType === 'Hybrid' && [
+                      ] : result.resultType === 'Hybrid' ? [
                         { id: '1', label: 'Implement pre-filter regex in your router' },
                         { id: '2', label: 'Set up edge-model fallback for failures' },
                         { id: '3', label: 'Configure latency telemetry checks' }
-                      ],
-                      result.resultType === 'AI Recommended' && [
+                      ] : result.resultType === 'AI Recommended' ? [
                         { id: '1', label: 'Update model config value to "gemini-1.5-flash"' },
                         { id: '2', label: 'Review prompt instructions for Gemini format' },
                         { id: '3', label: 'Add schema validation guardrails to ensure output formatting' }
-                      ],
-                      result.resultType === 'AI Essential' && [
+                      ] : [
                         { id: '1', label: 'Arrange static system instructions at top of prompt' },
                         { id: '2', label: 'Enable prompt cache in gateway settings' },
                         { id: '3', label: 'Prune conversational history in multi-turn request templates' }
                       ]
-                    ].filter(Boolean)[0]?.map((step: any) => (
+                    ) as { id: string; label: string }[]).map((step) => (
                       <div key={step.id} className="flex items-start gap-3 p-3 rounded-lg bg-surface-container-low border border-outline-variant/20 hover:bg-surface-variant/10 transition-colors">
                         <input
                           type="checkbox"

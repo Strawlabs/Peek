@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase';
 type ToastType = 'success' | 'error' | 'info';
 
 export const UsersScreen: React.FC = () => {
-  const { users, deleteUser, updateUserRole, activateUser, inviteUser } = useAppState();
+  const { users, deleteUser, updateUserRole, activateUser, inviteUser, currentUserRole } = useAppState();
   const [showInvite, setShowInvite] = useState(false);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -112,13 +112,15 @@ export const UsersScreen: React.FC = () => {
             Manage team access, roles, and governance permissions across Peek Enterprise.
           </p>
         </div>
-        <button
-          onClick={() => setShowInvite(!showInvite)}
-          className="flex items-center gap-2 bg-primary text-on-primary px-4 py-2 rounded-lg font-label-md text-label-md hover:opacity-90 transition-all"
-        >
-          <span className="material-symbols-outlined text-[18px]">person_add</span>
-          Invite User
-        </button>
+        {currentUserRole === 'Super Admin' && (
+          <button
+            onClick={() => setShowInvite(!showInvite)}
+            className="flex items-center gap-2 bg-primary text-on-primary px-4 py-2 rounded-lg font-label-md text-label-md hover:opacity-90 transition-all"
+          >
+            <span className="material-symbols-outlined text-[18px]">person_add</span>
+            Invite User
+          </button>
+        )}
       </header>
 
       {/* How does acceptance work — info banner */}
