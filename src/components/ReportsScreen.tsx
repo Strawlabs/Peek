@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAppState } from '../context/StateContext';
+import { supabase } from '../lib/supabase';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -12,9 +13,34 @@ interface ReportSchedule {
   recipientType: 'email' | 'slack' | 'teams';
   recipient: string;
   time: string;
+  timezone: string;
   active: boolean;
   nextRun: string;
 }
+
+// Common IANA timezones grouped for the selector
+const TIMEZONES = [
+  { label: 'UTC (UTC+0)',                    value: 'UTC' },
+  { label: 'London (GMT/BST)',               value: 'Europe/London' },
+  { label: 'Paris / Berlin (CET, UTC+1/2)', value: 'Europe/Paris' },
+  { label: 'Moscow (MSK, UTC+3)',            value: 'Europe/Moscow' },
+  { label: 'Dubai (GST, UTC+4)',             value: 'Asia/Dubai' },
+  { label: 'Karachi (PKT, UTC+5)',           value: 'Asia/Karachi' },
+  { label: 'Mumbai / Kolkata (IST, UTC+5:30)', value: 'Asia/Kolkata' },
+  { label: 'Dhaka (BST, UTC+6)',             value: 'Asia/Dhaka' },
+  { label: 'Bangkok (ICT, UTC+7)',           value: 'Asia/Bangkok' },
+  { label: 'Singapore / KL (SGT, UTC+8)',   value: 'Asia/Singapore' },
+  { label: 'Tokyo / Seoul (JST/KST, UTC+9)', value: 'Asia/Tokyo' },
+  { label: 'Sydney (AEST, UTC+10/11)',       value: 'Australia/Sydney' },
+  { label: 'Auckland (NZST, UTC+12)',        value: 'Pacific/Auckland' },
+  { label: 'Honolulu (HST, UTC-10)',         value: 'Pacific/Honolulu' },
+  { label: 'Anchorage (AKST, UTC-9)',        value: 'America/Anchorage' },
+  { label: 'Los Angeles (PST/PDT, UTC-8/7)', value: 'America/Los_Angeles' },
+  { label: 'Denver (MST/MDT, UTC-7/6)',     value: 'America/Denver' },
+  { label: 'Chicago (CST/CDT, UTC-6/5)',    value: 'America/Chicago' },
+  { label: 'New York (EST/EDT, UTC-5/4)',   value: 'America/New_York' },
+  { label: 'São Paulo (BRT, UTC-3)',         value: 'America/Sao_Paulo' },
+];
 
 export const ReportsScreen: React.FC = () => {
   const { requests, budgets, policies, channels, sendTestNotification } = useAppState();
@@ -60,8 +86,9 @@ export const ReportsScreen: React.FC = () => {
         recipientType: 'email',
         recipient: 'exec-team@peek.ai',
         time: '09:00',
+        timezone: 'UTC',
         active: true,
-        nextRun: 'July 6, 2026, 9:00 AM UTC',
+        nextRun: 'July 6, 2026, 9:00 AM (UTC)',
       },
       {
         id: 'sch-2',
@@ -72,8 +99,9 @@ export const ReportsScreen: React.FC = () => {
         recipientType: 'slack',
         recipient: '#budget-warnings',
         time: '07:00',
+        timezone: 'America/New_York',
         active: true,
-        nextRun: 'June 30, 2026, 7:00 AM UTC',
+        nextRun: 'June 30, 2026, 7:00 AM (America/New_York)',
       },
     ];
   });
@@ -90,6 +118,9 @@ export const ReportsScreen: React.FC = () => {
   const [newRecipientType, setNewRecipientType] = useState<ReportSchedule['recipientType']>('email');
   const [newRecipient, setNewRecipient] = useState('');
   const [newTime, setNewTime] = useState('09:00');
+  const [newTimezone, setNewTimezone] = useState<string>(() => {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return 'UTC'; }
+  });
 
   // ─── Static Report Definitions ──────────────────────────────────────────────
 
@@ -631,7 +662,8 @@ export const ReportsScreen: React.FC = () => {
     // Mock calculate next run string
     const nextDate = new Date();
     nextDate.setDate(nextDate.getDate() + (newFrequency === 'Daily' ? 1 : newFrequency === 'Weekly' ? 7 : 30));
-    const nextRun = `${nextDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}, ${newTime} UTC`;
+    const tzLabel = TIMEZONES.find(tz => tz.value === newTimezone)?.value || newTimezone;
+    const nextRun = `${nextDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}, ${newTime} (${tzLabel})`;
 
     const newSchedule: ReportSchedule = {
       id: `sch-${Math.random().toString(36).substring(2, 7)}`,
@@ -642,6 +674,7 @@ export const ReportsScreen: React.FC = () => {
       recipientType: newRecipientType,
       recipient: newRecipient,
       time: newTime,
+      timezone: newTimezone,
       active: true,
       nextRun,
     };
@@ -666,26 +699,60 @@ export const ReportsScreen: React.FC = () => {
   };
 
   const handleRunNow = async (schedule: ReportSchedule) => {
-    showToast(`Starting manual execution trigger for ${schedule.reportTitle}...`, 'info');
-    
-    // Simulate API delivery lag
-    await new Promise((r) => setTimeout(r, 1200));
+    showToast(`Sending ${schedule.format} report to ${schedule.recipient}...`, 'info');
 
-    if (schedule.recipientType === 'slack') {
-      await sendTestNotification(
-        'slack',
-        'Slack Channel',
-        schedule.recipient
-      );
-    } else if (schedule.recipientType === 'teams') {
-      await sendTestNotification(
-        'teams',
-        'Microsoft Teams',
-        schedule.recipient
-      );
+    if (schedule.recipientType === 'email') {
+      // ── Real email via send-report-email Edge Function ──────────────────
+      const totalCost    = requests.reduce((s, r) => s + r.cost, 0);
+      const avgLatency   = requests.reduce((s, r) => s + r.latency, 0) / Math.max(requests.length, 1);
+      const vCount       = requests.filter(r => r.status.includes('Flagged') || r.status.includes('Blocked')).length;
+      const activePolCnt = policies.filter(p => p.active).length;
+
+      const { data, error } = await supabase.functions.invoke('send-report-email', {
+        body: {
+          to:            schedule.recipient,
+          reportTitle:   schedule.reportTitle,
+          reportId:      schedule.reportId,
+          format:        schedule.format,
+          frequency:     schedule.frequency,
+          timezone:      schedule.timezone || 'UTC',
+          scheduledTime: schedule.time,
+          metrics: {
+            totalCost,
+            totalRequests: requests.length,
+            violations:    vCount,
+            activePolicies: activePolCnt,
+            avgLatency,
+          },
+          siteUrl: window.location.origin,
+        },
+      });
+
+      if (error || data?.error) {
+        let msg = data?.error || error?.message || 'Failed to send email';
+        // Try to parse richer error body from Supabase FunctionsHttpError
+        if (error && 'context' in error && (error as any).context) {
+          try {
+            const errBody = await (error as any).context.json();
+            msg = errBody.error || errBody.details || msg;
+          } catch (_) {}
+        }
+        showToast(`❌ Email failed: ${msg}`, 'error');
+        return;
+      }
+
+      showToast(`✅ Report email delivered to ${schedule.recipient}!`);
+      return;
     }
 
-    showToast(`Successfully delivered report [${schedule.format}] to ${schedule.recipient}!`);
+    // ── Slack / Teams notification path ────────────────────────────────────
+    await new Promise((r) => setTimeout(r, 900));
+    if (schedule.recipientType === 'slack') {
+      await sendTestNotification('slack', 'Slack Channel', schedule.recipient);
+    } else if (schedule.recipientType === 'teams') {
+      await sendTestNotification('teams', 'Microsoft Teams', schedule.recipient);
+    }
+    showToast(`✅ Report [${schedule.format}] delivered to ${schedule.recipient}!`);
   };
 
   return (
@@ -1044,15 +1111,30 @@ export const ReportsScreen: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-bold text-on-surface-variant uppercase mb-1.5 tracking-wider">
-                  Delivery Time (UTC)
+                  Delivery Time
                 </label>
-                <input
-                  type="time"
-                  required
-                  value={newTime}
-                  onChange={(e) => setNewTime(e.target.value)}
-                  className="w-full bg-surface-container border border-outline-variant rounded-lg px-3 py-2 text-body-sm text-on-surface focus:outline-none focus:border-primary cursor-pointer"
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="time"
+                    required
+                    value={newTime}
+                    onChange={(e) => setNewTime(e.target.value)}
+                    className="w-32 flex-shrink-0 bg-surface-container border border-outline-variant rounded-lg px-3 py-2 text-body-sm text-on-surface focus:outline-none focus:border-primary cursor-pointer"
+                  />
+                  <div className="relative flex-1">
+                    <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-[16px] text-on-surface-variant pointer-events-none">public</span>
+                    <select
+                      value={newTimezone}
+                      onChange={(e) => setNewTimezone(e.target.value)}
+                      className="w-full bg-surface-container border border-outline-variant rounded-lg pl-8 pr-3 py-2 text-body-sm text-on-surface focus:outline-none focus:border-primary cursor-pointer appearance-none"
+                    >
+                      {TIMEZONES.map(tz => (
+                        <option key={tz.value} value={tz.value}>{tz.label}</option>
+                      ))}
+                    </select>
+                    <span className="material-symbols-outlined absolute right-2.5 top-1/2 -translate-y-1/2 text-[14px] text-on-surface-variant pointer-events-none">expand_more</span>
+                  </div>
+                </div>
               </div>
 
               <button

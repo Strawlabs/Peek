@@ -16,7 +16,7 @@ export const Header: React.FC<HeaderProps> = ({
   setSearchQuery,
   onMenuToggle,
 }) => {
-  const { authSession, signOut, notifications } = useAppState();
+  const { authSession, signOut, notifications, currentUserRole } = useAppState();
   const [showDropdown, setShowDropdown] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
 
@@ -150,6 +150,11 @@ export const Header: React.FC<HeaderProps> = ({
                   <div className="px-3 py-2 text-xs text-on-surface-variant border-b border-outline-variant/30 font-medium">
                     Signed in as <br />
                     <strong className="text-on-surface break-all">{authSession.email}</strong>
+                    <div className="mt-1">
+                      <span className="px-2 py-0.5 rounded text-[9px] uppercase font-bold bg-primary/10 text-primary border border-primary/20">
+                        {currentUserRole}
+                      </span>
+                    </div>
                   </div>
                   <button
                     onClick={() => {

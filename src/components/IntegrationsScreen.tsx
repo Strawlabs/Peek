@@ -424,10 +424,29 @@ function EnterpriseConfigModal({
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export const IntegrationsScreen: React.FC = () => {
-  const { providers, toggleProvider, notifications, sendTestNotification, channels, updateChannelConfig, enterpriseIntegrations, updateEnterpriseIntegration } = useAppState();
-  const [activeTab, setActiveTab] = useState<'providers' | 'enterprise' | 'notifications'>('providers');
+  const { providers, toggleProvider, notifications, sendTestNotification, channels, updateChannelConfig, enterpriseIntegrations, updateEnterpriseIntegration, apiKeys, generateVirtualKey, revokeVirtualKey } = useAppState();
+  const [activeTab, setActiveTab] = useState<'providers' | 'virtual_keys' | 'enterprise' | 'notifications'>('providers');
   const [modalChannel, setModalChannel] = useState<ChannelConfig | null>(null);
   const [modalIntegration, setModalIntegration] = useState<EnterpriseIntegration | null>(null);
+
+  // Virtual Key form state
+  const [showKeyForm, setShowKeyForm] = useState(false);
+  const [keyTeam, setKeyTeam] = useState('Engineering');
+  const [keyName, setKeyName] = useState('');
+  const [generatedKey, setGeneratedKey] = useState<string | null>(null);
+  const [copySuccess, setCopySuccess] = useState(false);
+  const [codeLang, setCodeLang] = useState<'curl' | 'python' | 'node'>('python');
+
+  const handleGenerateKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!keyName) return;
+    const res = await generateVirtualKey(keyTeam, keyName);
+    if (res.success && res.rawKey) {
+      setGeneratedKey(res.rawKey);
+      setKeyName('');
+      setShowKeyForm(false);
+    }
+  };
 
   const handleSaveChannel = (updated: ChannelConfig) => {
     updateChannelConfig(updated.id, updated.webhookUrl, updated.targetChannel, updated.connected);
@@ -448,6 +467,7 @@ export const IntegrationsScreen: React.FC = () => {
 
   const tabs = [
     { id: 'providers', label: 'LLM Providers', icon: 'hub' },
+    { id: 'virtual_keys', label: 'Virtual API Keys', icon: 'key', badge: apiKeys.length },
     { id: 'enterprise', label: 'Enterprise', icon: 'extension' },
     { id: 'notifications', label: 'Notification Log', icon: 'notifications', badge: notifications.length },
   ] as const;
@@ -524,6 +544,240 @@ export const IntegrationsScreen: React.FC = () => {
                 </button>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Tab: Virtual API Keys ────────────────────────────────────────────── */}
+      {activeTab === 'virtual_keys' && (
+        <div className="space-y-6 animate-fadeIn">
+          {/* Header & Create button */}
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-surface-container p-6 rounded-xl border border-outline-variant/30">
+            <div>
+              <h3 className="font-headline-sm text-headline-sm text-on-surface flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary text-[24px]">vpn_key</span>
+                Virtual API Keys Gateway
+              </h3>
+              <p className="text-xs text-on-surface-variant mt-1">
+                Issue team-scoped Virtual API Keys to developers. Incoming requests are authenticated, governed, and routed through Peek.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowKeyForm(!showKeyForm)}
+              className="flex items-center gap-2 bg-primary text-on-primary px-4 py-2 rounded-lg font-label-md text-label-md hover:opacity-90 transition-all shadow-md shadow-primary/10"
+            >
+              <span className="material-symbols-outlined text-[18px]">add</span>
+              {showKeyForm ? 'Cancel' : 'Generate Virtual Key'}
+            </button>
+          </div>
+
+          {/* Form Overlay */}
+          {showKeyForm && (
+            <form onSubmit={handleGenerateKey} className="glass-card rounded-xl p-6 max-w-lg space-y-4 animate-fadeIn">
+              <h4 className="font-headline-sm text-headline-sm text-on-surface">Issue New Team Virtual Key</h4>
+              <div>
+                <label className="block text-xs font-bold text-on-surface-variant uppercase mb-1">Assigned Team</label>
+                <select
+                  value={keyTeam}
+                  onChange={(e) => setKeyTeam(e.target.value)}
+                  className="w-full bg-surface-container border border-outline-variant rounded-lg px-3 py-2 text-body-sm text-on-surface focus:outline-none"
+                >
+                  <option>Engineering</option>
+                  <option>Customer Success</option>
+                  <option>Marketing</option>
+                  <option>Product Design</option>
+                  <option>Research</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-on-surface-variant uppercase mb-1">Key Label / Purpose</label>
+                <input
+                  value={keyName}
+                  onChange={(e) => setKeyName(e.target.value)}
+                  placeholder="e.g. CI/CD Review Pipeline Key"
+                  required
+                  className="w-full bg-surface-container border border-outline-variant rounded-lg px-3 py-2 text-body-sm text-on-surface focus:outline-none focus:border-primary"
+                />
+              </div>
+              <button
+                type="submit"
+                className="w-full py-2.5 bg-primary text-on-primary font-bold rounded-lg hover:opacity-90 transition-all text-body-sm"
+              >
+                Generate & Activate Virtual Key
+              </button>
+            </form>
+          )}
+
+          {/* Raw Generated Key Modal / Alert */}
+          {generatedKey && (
+            <div className="p-5 bg-emerald-950/80 border border-emerald-700/50 rounded-xl space-y-3 animate-fadeIn">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-emerald-300 uppercase flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                  Virtual Key Generated Successfully
+                </span>
+                <button onClick={() => setGeneratedKey(null)} className="text-emerald-400 hover:text-white text-xs">
+                  Dismiss
+                </button>
+              </div>
+              <p className="text-xs text-emerald-200">
+                Copy this key now. For security reasons, it will not be displayed in full again.
+              </p>
+              <div className="flex items-center gap-3 bg-background/80 p-3 rounded-lg border border-emerald-800/40">
+                <code className="text-xs font-mono text-emerald-300 flex-1 break-all">{generatedKey}</code>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(generatedKey);
+                    setCopySuccess(true);
+                    setTimeout(() => setCopySuccess(false), 2000);
+                  }}
+                  className="px-3 py-1 bg-emerald-500 text-slate-950 font-bold rounded text-xs hover:bg-emerald-400 transition-all flex items-center gap-1 shrink-0"
+                >
+                  <span className="material-symbols-outlined text-[14px]">content_copy</span>
+                  {copySuccess ? 'Copied!' : 'Copy Key'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Keys List Table */}
+          <div className="glass-card rounded-xl overflow-hidden">
+            <table className="w-full text-left border-collapse">
+              <thead className="bg-surface-container text-on-surface-variant font-label-md text-label-md">
+                <tr>
+                  <th className="px-6 py-4 font-medium border-b border-outline-variant">Key Details</th>
+                  <th className="px-6 py-4 font-medium border-b border-outline-variant">Team</th>
+                  <th className="px-6 py-4 font-medium border-b border-outline-variant">Key Prefix</th>
+                  <th className="px-6 py-4 font-medium border-b border-outline-variant">Status</th>
+                  <th className="px-6 py-4 font-medium border-b border-outline-variant text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="text-body-sm text-on-surface divide-y divide-outline-variant/30">
+                {apiKeys.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-8 text-center text-on-surface-variant font-medium">
+                      No Virtual API Keys generated yet. Click "Generate Virtual Key" to start.
+                    </td>
+                  </tr>
+                ) : (
+                  apiKeys.map((k) => (
+                    <tr key={k.id} className="hover:bg-surface-variant/20 transition-all">
+                      <td className="px-6 py-4">
+                        <div className="font-bold">{k.name}</div>
+                        <div className="text-xs text-on-surface-variant font-mono">ID: {k.id}</div>
+                      </td>
+                      <td className="px-6 py-4">{k.team}</td>
+                      <td className="px-6 py-4 font-mono text-xs text-primary">{k.key_prefix}_••••••••</td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold ${
+                          k.active ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-800/30' : 'bg-rose-950/40 text-rose-400 border border-rose-800/30'
+                        }`}>
+                          {k.active ? 'Active' : 'Revoked'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        {k.active && (
+                          <button
+                            onClick={() => revokeVirtualKey(k.id)}
+                            className="text-xs text-rose-400 hover:text-rose-300 font-bold border border-rose-800/40 px-3 py-1 rounded-lg hover:bg-rose-950/50 transition-all"
+                          >
+                            Revoke Key
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Integration Code Snippets Panel */}
+          <div className="glass-card rounded-xl p-6 space-y-4">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 border-b border-outline-variant/30 pb-4">
+              <div>
+                <h4 className="font-headline-sm text-headline-sm text-on-surface flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary">code</span>
+                  Integration Snippets for Developers
+                </h4>
+                <p className="text-xs text-on-surface-variant mt-0.5">
+                  Point standard client libraries to Peek AI Gateway using Virtual Keys.
+                </p>
+              </div>
+              <div className="flex bg-surface-container p-1 rounded-lg border border-outline-variant">
+                <button
+                  onClick={() => setCodeLang('python')}
+                  className={`px-3 py-1 text-xs font-bold rounded ${codeLang === 'python' ? 'bg-primary text-on-primary' : 'text-on-surface-variant'}`}
+                >
+                  Python (OpenAI SDK)
+                </button>
+                <button
+                  onClick={() => setCodeLang('node')}
+                  className={`px-3 py-1 text-xs font-bold rounded ${codeLang === 'node' ? 'bg-primary text-on-primary' : 'text-on-surface-variant'}`}
+                >
+                  Node.js (TypeScript)
+                </button>
+                <button
+                  onClick={() => setCodeLang('curl')}
+                  className={`px-3 py-1 text-xs font-bold rounded ${codeLang === 'curl' ? 'bg-primary text-on-primary' : 'text-on-surface-variant'}`}
+                >
+                  cURL REST API
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-surface-container-low rounded-xl p-4 font-mono text-xs overflow-x-auto text-on-surface leading-relaxed border border-outline-variant/30">
+              {codeLang === 'python' && (
+                <pre>{`import openai
+
+# Route standard OpenAI SDK through Peek Gateway
+client = openai.OpenAI(
+    base_url="${window.location.origin.replace('5173', '54321')}/functions/v1/v1-chat-completions",
+    api_key="${generatedKey || 'pk_live_eng_92a81f3d'}"  # Virtual API Key
+)
+
+response = client.chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "Analyze quarterly report"}],
+    extra_headers={
+        "X-Peek-Workflow": "Financial Analysis",
+        "X-Peek-Customer": "Acme Corp"
+    }
+)
+
+print(response.choices[0].message.content)`}</pre>
+              )}
+
+              {codeLang === 'node' && (
+                <pre>{`import OpenAI from 'openai';
+
+const openai = new OpenAI({
+  baseURL: '${window.location.origin.replace('5173', '54321')}/functions/v1/v1-chat-completions',
+  apiKey: '${generatedKey || 'pk_live_eng_92a81f3d'}', // Virtual API Key
+});
+
+async function main() {
+  const completion = await openai.chat.completions.create({
+    messages: [{ role: 'user', content: 'Generate code review' }],
+    model: 'gpt-4o',
+  });
+
+  console.log(completion.choices[0].message.content);
+}`}</pre>
+              )}
+
+              {codeLang === 'curl' && (
+                <pre>{`curl -X POST "${window.location.origin.replace('5173', '54321')}/functions/v1/v1-chat-completions" \\
+  -H "Authorization: Bearer ${generatedKey || 'pk_live_eng_92a81f3d'}" \\
+  -H "X-Peek-Team: Engineering" \\
+  -H "X-Peek-Workflow: CI/CD Review" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "gpt-4o",
+    "messages": [{"role": "user", "content": "Check PR security"}]
+  }'`}</pre>
+              )}
+            </div>
           </div>
         </div>
       )}
