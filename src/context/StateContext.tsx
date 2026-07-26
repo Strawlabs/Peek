@@ -898,9 +898,11 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // ─── Virtual API Keys Operations ──────────────────────────────────────────
 
   const generateVirtualKey = async (team: string, name: string) => {
-    const randomHex = Array.from({ length: 16 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+    const randomHex = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
     const prefix = `pk_live_${team.toLowerCase().slice(0, 3)}`;
     const rawKey = `${prefix}_${randomHex}`;
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(rawKey));
+    const keyHash = Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
     const id = 'key-' + Math.random().toString(36).substring(2, 9);
     const newKey: VirtualKey = {
       id,
@@ -908,7 +910,7 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       team,
       name,
       key_prefix: prefix,
-      key_hash: 'hash_' + randomHex.slice(0, 8),
+      key_hash: keyHash,
       active: true,
       created_at: new Date().toISOString()
     };

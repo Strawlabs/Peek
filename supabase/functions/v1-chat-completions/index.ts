@@ -29,6 +29,11 @@ const PROVIDER_PRICING: Record<string, Record<string, { input: number; output: n
   }
 };
 
+const sha256Hex = async (value: string) => {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
+};
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -52,16 +57,23 @@ Deno.serve(async (req: Request) => {
 
     if (virtualKey && virtualKey.startsWith('pk_live_')) {
       const prefix = virtualKey.substring(0, 11);
+      const keyHash = await sha256Hex(virtualKey);
       const { data: keyRow } = await supabaseAdmin
         .from('api_keys')
         .select('*')
         .eq('key_prefix', prefix)
+        .eq('key_hash', keyHash)
         .eq('active', true)
         .maybeSingle();
 
       if (keyRow) {
         team = keyRow.team;
         orgId = keyRow.org_id;
+      } else {
+        return new Response(
+          JSON.stringify({ error: { message: 'Invalid or revoked Peek virtual API key.', type: 'peek_authentication_error', code: 401 } }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
     }
 
