@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useAppState } from '../context/StateContext';
-import { supabase } from '../lib/supabase';
 
 export const ProxyPlaygroundScreen: React.FC = () => {
   const { providers, routeGatewayRequest, apiKeys } = useAppState();
