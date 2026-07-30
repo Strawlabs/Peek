@@ -9,7 +9,7 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ currentScreen, setScreen, mobileOpen, setMobileOpen }) => {
-  const { currentUserRole, authSession, currentOrganization } = useAppState();
+  const { currentUserRole, currentOrganization } = useAppState();
 
   const menuItems = [
     { id: 'overview', name: 'Executive Overview', icon: 'dashboard' },
