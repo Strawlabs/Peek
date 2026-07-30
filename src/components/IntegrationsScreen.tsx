@@ -450,24 +450,6 @@ export const IntegrationsScreen: React.FC = () => {
     }
   };
 
-  // Virtual Key form state
-  const [showKeyForm, setShowKeyForm] = useState(false);
-  const [keyTeam, setKeyTeam] = useState('Engineering');
-  const [keyName, setKeyName] = useState('');
-  const [generatedKey, setGeneratedKey] = useState<string | null>(null);
-  const [copySuccess, setCopySuccess] = useState(false);
-  const [codeLang, setCodeLang] = useState<'curl' | 'python' | 'node'>('python');
-
-  const handleGenerateKey = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!keyName) return;
-    const res = await generateVirtualKey(keyTeam, keyName);
-    if (res.success && res.rawKey) {
-      setGeneratedKey(res.rawKey);
-      setKeyName('');
-      setShowKeyForm(false);
-    }
-  };
 
   const handleSaveChannel = (updated: ChannelConfig) => {
     updateChannelConfig(updated.id, updated.webhookUrl, updated.targetChannel, updated.connected);
