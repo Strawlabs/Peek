@@ -5,7 +5,29 @@ import { supabase } from '../lib/supabase';
 type ToastType = 'success' | 'error' | 'info';
 
 export const UsersScreen: React.FC = () => {
-  const { users, deleteUser, updateUserRole, activateUser, inviteUser, currentUserRole } = useAppState();
+  const { users: rawUsers, deleteUser, updateUserRole, activateUser, inviteUser, currentUserRole } = useAppState();
+
+  // Deduplicate by email — keep the last (most recently added) entry per email
+  const users = rawUsers.reduce<typeof rawUsers>((acc, user) => {
+    const idx = acc.findIndex(u => u.email.toLowerCase() === user.email.toLowerCase());
+    if (idx >= 0) {
+      // Replace with the newer record (prefer Active status and real name)
+      const existing = acc[idx];
+      const merged = {
+        ...existing,
+        ...user,
+        // Prefer the shorter / cleaner name to avoid doubles like "aswini m aswini m"
+        name: (user.name && user.name.trim().length > 0 && user.name.trim().length <= existing.name.trim().length)
+          ? user.name.trim()
+          : existing.name.trim(),
+        status: user.status === 'Active' ? 'Active' : existing.status,
+      } as typeof user;
+      acc[idx] = merged;
+    } else {
+      acc.push({ ...user, name: user.name?.trim() || user.email.split('@')[0] });
+    }
+    return acc;
+  }, []);
   const [showInvite, setShowInvite] = useState(false);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');

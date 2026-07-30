@@ -13,6 +13,8 @@ import { UsersScreen } from './components/UsersScreen';
 import { SettingsScreen } from './components/SettingsScreen';
 import { ReportsScreen } from './components/ReportsScreen';
 import { IntegrationsScreen } from './components/IntegrationsScreen';
+import { ConnectedModelsInventoryScreen } from './components/ConnectedModelsInventoryScreen';
+import { OrganizationManagementScreen } from './components/OrganizationManagementScreen';
 import { LoginScreen } from './components/LoginScreen';
 
 import { useAppState } from './context/StateContext';
@@ -117,7 +119,7 @@ function SetPasswordModal({ onClose }: { onClose: () => void }) {
 }
 
 function AppShell() {
-  const { loading, error, authSession } = useAppState();
+  const { loading, error, authSession, currentUserRole } = useAppState();
   const [currentScreen, setScreen] = useState('overview');
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -200,16 +202,23 @@ function AppShell() {
   }
 
   const renderScreen = () => {
+    // Role-based Route Protection
+    if (currentUserRole === 'Viewer' && (currentScreen === 'integrations' || currentScreen === 'users' || currentScreen === 'orgs')) {
+      return <OverviewScreen setScreen={setScreen} />;
+    }
+
     switch (currentScreen) {
       case 'overview': return <OverviewScreen setScreen={setScreen} />;
       case 'spend': return <SpendAnalyticsScreen />;
       case 'governance': return <GovernanceCenterScreen />;
       case 'intelligence': return <IntelligenceCenterScreen />;
+      case 'models': return <ConnectedModelsInventoryScreen />;
       case 'tba': return <TokenBenefitScreen />;
       case 'reports': return <ReportsScreen />;
       case 'integrations': return <IntegrationsScreen />;
       case 'sandbox': return <ProxyPlaygroundScreen />;
       case 'users': return <UsersScreen />;
+      case 'orgs': return <OrganizationManagementScreen />;
       case 'settings': return <SettingsScreen />;
       default: return <OverviewScreen setScreen={setScreen} />;
     }

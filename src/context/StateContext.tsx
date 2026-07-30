@@ -78,8 +78,32 @@ export interface Outcome {
   necessity: 'AI Essential' | 'AI Recommended' | 'Hybrid' | 'Rule-Based Preferred';
 }
 
+export interface Organization {
+  id: string;
+  name: string;
+  logo?: string;
+  subscriptionPlan: 'Starter' | 'Pro' | 'Enterprise';
+  region?: string;
+  created_at?: string;
+}
+
+export interface ConnectedModel {
+  id: string;
+  name: string;
+  providerId: string;
+  providerName: string;
+  status: 'Active' | 'Beta' | 'Deprecated';
+  capabilities: ('Vision' | 'Function Calling' | 'Code' | 'Embedding' | 'Audio' | 'Reasoning')[];
+  contextWindow: string;
+  maxOutputTokens: string;
+  pricingPrompt: string;
+  pricingCompletion: string;
+  requestsCount?: number;
+}
+
 export interface User {
   id: string;
+  org_id?: string;
   name: string;
   email: string;
   role: string;
@@ -185,7 +209,7 @@ const SEED_USERS: User[] = [
 
 // ─── Telemetry seeder — generates demo requests using providers from DB ───────
 
-function generateSeedRequests(dbProviders: Provider[]): { requests: TelemetryRequest[]; budgetSpend: Record<string, number> } {
+function generateSeedRequests(dbProviders: Provider[], orgId: string = 'org-default'): { requests: TelemetryRequest[]; budgetSpend: Record<string, number> } {
   const days = 30;
   const teams = ['Engineering', 'Customer Success', 'Marketing', 'Product Design', 'Research'];
   const departments: Record<string, string> = {
@@ -235,12 +259,13 @@ function generateSeedRequests(dbProviders: Provider[]): { requests: TelemetryReq
       : `Process workflow tasks for ${workflow}`;
     newRequests.push({
       id: 'req-' + Math.random().toString(36).substring(2, 11),
+      org_id: orgId,
       provider: prov.id, model, tokens_in: tokensIn, tokens_out: tokensOut,
       cost, latency, timestamp, team,
       project: 'Project-' + ['Phoenix', 'Sentinel', 'Keystone', 'Nebula'][Math.floor(Math.random() * 4)],
       department, workflow, customer: customers[Math.floor(Math.random() * customers.length)],
       prompt, response: `Simulated response from ${model}. Processed ${tokensIn + tokensOut} tokens in ${latency}s.`, status
-    });
+    } as any);
     budgetSpend[team] = (budgetSpend[team] || 0) + cost;
   }
   newRequests.sort((a, b) => a.timestamp - b.timestamp);
@@ -275,6 +300,14 @@ function mapOutcome(o: Record<string, unknown>): Outcome {
 // ─── Context type ─────────────────────────────────────────────────────────────
 
 interface StateContextType {
+  organizations: Organization[];
+  currentOrganization: Organization;
+  switchOrganization: (orgId: string) => void;
+  createOrganization: (name: string, plan: 'Starter' | 'Pro' | 'Enterprise', logo?: string) => Promise<void>;
+  updateOrganization: (id: string, updates: Partial<Organization>) => Promise<void>;
+  connectedModels: ConnectedModel[];
+  connectProviderWithCredentials: (providerId: string, apiKey: string, endpoint?: string, region?: string) => Promise<{ success: boolean; models: string[]; error?: string }>;
+  sendPasswordResetEmail: (email: string) => Promise<{ success: boolean; error?: string }>;
   providers: Provider[];
   requests: TelemetryRequest[];
   policies: Policy[];
@@ -316,9 +349,94 @@ interface StateContextType {
 
 const StateContext = createContext<StateContextType | undefined>(undefined);
 
+const SEED_ORGANIZATIONS: Organization[] = [
+  { id: 'org-default', name: 'Acme Enterprise Corp', subscriptionPlan: 'Enterprise', region: 'US-East (Virginia)' },
+  { id: 'org-apex', name: 'Apex Global Technologies', subscriptionPlan: 'Pro', region: 'EU-West (Frankfurt)' },
+  { id: 'org-cyber', name: 'Cyberdyne AI Labs', subscriptionPlan: 'Starter', region: 'US-West (Oregon)' },
+];
+
+export const DISCOVERABLE_MODELS: Record<string, ConnectedModel[]> = {
+  openai: [
+    { id: 'gpt-4o', name: 'GPT-4o (Omni)', providerId: 'openai', providerName: 'OpenAI', status: 'Active', capabilities: ['Vision', 'Function Calling', 'Code', 'Audio'], contextWindow: '128,000 tokens', maxOutputTokens: '4,096 tokens', pricingPrompt: '$5.00 / 1M tokens', pricingCompletion: '$15.00 / 1M tokens' },
+    { id: 'gpt-4o-mini', name: 'GPT-4o Mini', providerId: 'openai', providerName: 'OpenAI', status: 'Active', capabilities: ['Vision', 'Function Calling', 'Code'], contextWindow: '128,000 tokens', maxOutputTokens: '16,384 tokens', pricingPrompt: '$0.15 / 1M tokens', pricingCompletion: '$0.60 / 1M tokens' },
+    { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo', providerId: 'openai', providerName: 'OpenAI', status: 'Active', capabilities: ['Function Calling', 'Code'], contextWindow: '16,385 tokens', maxOutputTokens: '4,096 tokens', pricingPrompt: '$0.50 / 1M tokens', pricingCompletion: '$1.50 / 1M tokens' },
+    { id: 'o1-preview', name: 'o1-preview (Reasoning)', providerId: 'openai', providerName: 'OpenAI', status: 'Beta', capabilities: ['Reasoning', 'Code'], contextWindow: '128,000 tokens', maxOutputTokens: '32,768 tokens', pricingPrompt: '$15.00 / 1M tokens', pricingCompletion: '$60.00 / 1M tokens' },
+  ],
+  anthropic: [
+    { id: 'claude-3-5-sonnet', name: 'Claude 3.5 Sonnet', providerId: 'anthropic', providerName: 'Anthropic', status: 'Active', capabilities: ['Vision', 'Function Calling', 'Code'], contextWindow: '200,000 tokens', maxOutputTokens: '8,192 tokens', pricingPrompt: '$3.00 / 1M tokens', pricingCompletion: '$15.00 / 1M tokens' },
+    { id: 'claude-3-haiku', name: 'Claude 3 Haiku', providerId: 'anthropic', providerName: 'Anthropic', status: 'Active', capabilities: ['Vision', 'Code'], contextWindow: '200,000 tokens', maxOutputTokens: '4,096 tokens', pricingPrompt: '$0.25 / 1M tokens', pricingCompletion: '$1.25 / 1M tokens' },
+    { id: 'claude-3-opus', name: 'Claude 3 Opus', providerId: 'anthropic', providerName: 'Anthropic', status: 'Active', capabilities: ['Vision', 'Function Calling', 'Code'], contextWindow: '200,000 tokens', maxOutputTokens: '4,096 tokens', pricingPrompt: '$15.00 / 1M tokens', pricingCompletion: '$75.00 / 1M tokens' },
+  ],
+  gemini: [
+    { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', providerId: 'gemini', providerName: 'Google Gemini', status: 'Active', capabilities: ['Vision', 'Audio', 'Function Calling', 'Code'], contextWindow: '1,000,000 tokens', maxOutputTokens: '8,192 tokens', pricingPrompt: '$0.075 / 1M tokens', pricingCompletion: '$0.30 / 1M tokens' },
+    { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', providerId: 'gemini', providerName: 'Google Gemini', status: 'Active', capabilities: ['Vision', 'Audio', 'Function Calling', 'Code', 'Reasoning'], contextWindow: '2,000,000 tokens', maxOutputTokens: '8,192 tokens', pricingPrompt: '$1.25 / 1M tokens', pricingCompletion: '$5.00 / 1M tokens' },
+  ],
+  'azure-openai': [
+    { id: 'gpt-4-azure', name: 'GPT-4 Azure Enterprise', providerId: 'azure-openai', providerName: 'Azure OpenAI', status: 'Active', capabilities: ['Function Calling', 'Code'], contextWindow: '128,000 tokens', maxOutputTokens: '4,096 tokens', pricingPrompt: '$10.00 / 1M tokens', pricingCompletion: '$30.00 / 1M tokens' },
+  ],
+  'aws-bedrock': [
+    { id: 'claude-3-sonnet-bedrock', name: 'Claude 3 Sonnet (Bedrock)', providerId: 'aws-bedrock', providerName: 'AWS Bedrock', status: 'Active', capabilities: ['Vision', 'Function Calling'], contextWindow: '200,000 tokens', maxOutputTokens: '4,096 tokens', pricingPrompt: '$3.00 / 1M tokens', pricingCompletion: '$15.00 / 1M tokens' },
+  ],
+  local: [
+    { id: 'llama-3-local', name: 'Llama 3 70B (Ollama / Local)', providerId: 'local', providerName: 'Local Inference Engine', status: 'Active', capabilities: ['Code', 'Function Calling'], contextWindow: '32,768 tokens', maxOutputTokens: '4,096 tokens', pricingPrompt: '$0.00 / Local', pricingCompletion: '$0.00 / Local' },
+    { id: 'mistral-nemo-local', name: 'Mistral NeMo 12B (Local)', providerId: 'local', providerName: 'Local Inference Engine', status: 'Active', capabilities: ['Code'], contextWindow: '128,000 tokens', maxOutputTokens: '4,096 tokens', pricingPrompt: '$0.00 / Local', pricingCompletion: '$0.00 / Local' },
+  ]
+};
+
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
 export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [organizations, setOrganizations] = useState<Organization[]>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('peek_organizations');
+      if (saved) {
+        try { return JSON.parse(saved); } catch (e) { console.error('Failed to parse organizations', e); }
+      }
+    }
+    return SEED_ORGANIZATIONS;
+  });
+
+  const [currentOrgId, setCurrentOrgId] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('peek_current_org_id') || 'org-default';
+    }
+    return 'org-default';
+  });
+
+  const currentOrganization = organizations.find(o => o.id === currentOrgId) || organizations[0] || SEED_ORGANIZATIONS[0];
+
+  const switchOrganization = (orgId: string) => {
+    const exists = organizations.some(o => o.id === orgId);
+    if (exists) {
+      setCurrentOrgId(orgId);
+      localStorage.setItem('peek_current_org_id', orgId);
+    }
+  };
+
+  const createOrganization = async (name: string, subscriptionPlan: 'Starter' | 'Pro' | 'Enterprise', logo?: string) => {
+    const newOrg: Organization = {
+      id: 'org-' + Math.random().toString(36).substring(2, 8),
+      name,
+      subscriptionPlan,
+      logo: logo || undefined,
+      region: 'US-East (Virginia)',
+      created_at: new Date().toISOString()
+    };
+    const updated = [...organizations, newOrg];
+    setOrganizations(updated);
+    localStorage.setItem('peek_organizations', JSON.stringify(updated));
+    setCurrentOrgId(newOrg.id);
+    localStorage.setItem('peek_current_org_id', newOrg.id);
+    await supabase.from('organizations').insert({ id: newOrg.id, name: newOrg.name });
+  };
+
+  const updateOrganization = async (id: string, updates: Partial<Organization>) => {
+    const updated = organizations.map(o => o.id === id ? { ...o, ...updates } : o);
+    setOrganizations(updated);
+    localStorage.setItem('peek_organizations', JSON.stringify(updated));
+    await supabase.from('organizations').update(updates as any).eq('id', id);
+  };
+
   const [providers, setProviders] = useState<Provider[]>([]);
   const [requests, setRequests] = useState<TelemetryRequest[]>([]);
   const [policies, setPolicies] = useState<Policy[]>([]);
@@ -469,22 +587,27 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           supabase.from('api_keys').select('*')
         ]);
 
-        // Surface any critical DB error
-        const criticalError = pErr || polErr || bErr;
-        if (criticalError) {
-          throw new Error(`Database connection failed: ${criticalError.message}`);
-        }
+        if (pErr) console.warn('providers fetch warning:', pErr.message);
+        if (polErr) console.warn('policies fetch warning:', polErr.message);
+        if (bErr) console.warn('budgets fetch warning:', bErr.message);
         if (rErr) console.warn('requests fetch warning:', rErr.message);
         if (recErr) console.warn('recommendations fetch warning:', recErr.message);
         if (oErr) console.warn('outcomes fetch warning:', oErr.message);
         if (uErr) console.warn('users fetch warning:', uErr.message);
+        if (kErr) console.warn('api_keys fetch warning:', kErr.message);
+
+        // Helper to filter rows for current organization
+        const forCurrentOrg = <T extends Record<string, any>>(rows: T[] | null): T[] => {
+          if (!rows) return [];
+          return rows.filter(row => !row.org_id || row.org_id === currentOrgId);
+        };
 
         // ── Seed providers if empty ──────────────────────────────────────────
-        let liveProviders: Provider[] = (pData || []).map(p => mapProvider(p as Record<string, unknown>));
+        let liveProviders: Provider[] = forCurrentOrg(pData).map(p => mapProvider(p as Record<string, unknown>));
         if (liveProviders.length === 0) {
           const { data: seeded, error: seedPErr } = await supabase
             .from('providers')
-            .insert(SEED_PROVIDERS.map(p => ({ id: p.id, name: p.name, status: p.status, api_key: p.apiKey, models: p.models })))
+            .insert(SEED_PROVIDERS.map(p => ({ id: p.id, org_id: currentOrgId, name: p.name, status: p.status, api_key: p.apiKey, models: p.models })))
             .select();
           if (seedPErr) console.warn('Provider seed error:', seedPErr.message);
           liveProviders = (seeded || SEED_PROVIDERS).map(p => mapProvider(p as Record<string, unknown>));
@@ -492,10 +615,10 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setProviders(liveProviders);
 
         // ── Seed policies if empty ───────────────────────────────────────────
-        let livePolicies: Policy[] = (polData || []) as Policy[];
+        let livePolicies: Policy[] = forCurrentOrg(polData) as Policy[];
         if (livePolicies.length === 0) {
           const { data: seededPol, error: seedPolErr } = await supabase
-            .from('policies').insert(SEED_POLICIES).select();
+            .from('policies').insert(SEED_POLICIES.map(p => ({ ...p, org_id: currentOrgId }))).select();
           if (seedPolErr) console.warn('Policy seed error:', seedPolErr.message);
           livePolicies = (seededPol || SEED_POLICIES) as Policy[];
         }
@@ -503,10 +626,10 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         // ── Seed budgets if empty ────────────────────────────────────────────
         let liveBudgets: Record<string, Budget> = {};
-        let budgetRows = bData || [];
+        let budgetRows = forCurrentOrg(bData);
         if (budgetRows.length === 0) {
           const { data: seededB, error: seedBErr } = await supabase
-            .from('budgets').insert(SEED_BUDGETS).select();
+            .from('budgets').insert(SEED_BUDGETS.map(b => ({ ...b, org_id: currentOrgId }))).select();
           if (seedBErr) console.warn('Budget seed error:', seedBErr.message);
           budgetRows = seededB || SEED_BUDGETS;
         }
@@ -516,42 +639,41 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setBudgets(liveBudgets);
 
         // ── Seed recommendations if empty ────────────────────────────────────
-        let liveRecs: Recommendation[] = (recData || []) as Recommendation[];
+        let liveRecs: Recommendation[] = forCurrentOrg(recData) as Recommendation[];
         if (liveRecs.length === 0) {
           const { data: seededRec, error: seedRecErr } = await supabase
-            .from('recommendations').insert(SEED_RECOMMENDATIONS).select();
+            .from('recommendations').insert(SEED_RECOMMENDATIONS.map(r => ({ ...r, org_id: currentOrgId }))).select();
           if (seedRecErr) console.warn('Recommendations seed error:', seedRecErr.message);
           liveRecs = (seededRec || SEED_RECOMMENDATIONS) as Recommendation[];
         }
         setRecommendations(liveRecs);
 
         // ── Seed outcomes if empty ───────────────────────────────────────────
-        let liveOutcomes: Outcome[] = oData ? oData.map(o => mapOutcome(o as Record<string, unknown>)) : [];
+        let liveOutcomes: Outcome[] = forCurrentOrg(oData).map(o => mapOutcome(o as Record<string, unknown>));
         if (liveOutcomes.length === 0) {
           const { data: seededO, error: seedOErr } = await supabase
-            .from('outcomes').insert(SEED_OUTCOMES).select();
+            .from('outcomes').insert(SEED_OUTCOMES.map(o => ({ ...o, org_id: currentOrgId }))).select();
           if (seedOErr) console.warn('Outcomes seed error:', seedOErr.message);
           liveOutcomes = (seededO || SEED_OUTCOMES).map(o => mapOutcome(o as Record<string, unknown>));
         }
         setOutcomes(liveOutcomes);
 
         // ── Seed users if empty ──────────────────────────────────────────────
-        let liveUsers: User[] = (uData || []) as User[];
+        let liveUsers: User[] = forCurrentOrg(uData) as User[];
         if (liveUsers.length === 0) {
           const { data: seededU, error: seedUErr } = await supabase
-            .from('users').insert(SEED_USERS).select();
+            .from('users').insert(SEED_USERS.map(u => ({ ...u, org_id: currentOrgId }))).select();
           if (seedUErr) console.warn('Users seed error:', seedUErr.message);
           liveUsers = (seededU || SEED_USERS) as User[];
         }
         setUsers(liveUsers);
-        if (kErr) console.warn('api_keys fetch warning:', kErr.message);
-        setApiKeys((kData || []) as VirtualKey[]);
+        setApiKeys(forCurrentOrg(kData) as VirtualKey[]);
 
         // ── Seed telemetry requests if empty (uses live providers from DB) ───
-        let liveRequests: TelemetryRequest[] = (rData || []) as TelemetryRequest[];
+        let liveRequests: TelemetryRequest[] = forCurrentOrg(rData) as TelemetryRequest[];
         if (liveRequests.length === 0 && liveProviders.some(p => p.status === 'connected')) {
           console.log('[Peek] Seeding historical telemetry requests into Supabase...');
-          const { requests: seedReqs, budgetSpend } = generateSeedRequests(liveProviders);
+          const { requests: seedReqs, budgetSpend } = generateSeedRequests(liveProviders, currentOrgId);
           const batchSize = 300;
           for (let i = 0; i < seedReqs.length; i += batchSize) {
             const { error: insErr } = await supabase.from('requests').insert(seedReqs.slice(i, i + batchSize));
@@ -578,7 +700,7 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
 
     loadState();
-  }, []);
+  }, [currentOrgId]);
 
   // ─── 2. Realtime subscriptions for ALL tables ───────────────────────────────
 
@@ -732,25 +854,41 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const email = authUser.email?.toLowerCase();
     if (!email) return;
 
+    const userMetaOrg = authUser.user_metadata?.org_id;
     const matchingUser = users.find(u => u.email.toLowerCase() === email);
+    const targetOrgId = userMetaOrg || matchingUser?.org_id || currentOrgId || 'org-default';
+
+    if (targetOrgId && targetOrgId !== currentOrgId) {
+      setCurrentOrgId(targetOrgId);
+      localStorage.setItem('peek_current_org_id', targetOrgId);
+    }
+
     const shouldBeSuperAdmin = email.includes('ammu') || email.endsWith('@peek.ai');
 
     if (matchingUser) {
       if (shouldBeSuperAdmin && matchingUser.role !== 'Super Admin') {
         console.log(`[Peek] Upgrading ${email} to Super Admin in DB & State`);
-        setUsers(prev => prev.map(u => u.email.toLowerCase() === email ? { ...u, role: 'Super Admin', status: 'Active' as const } : u));
-        await supabase.from('users').update({ role: 'Super Admin', status: 'Active', id: authUser.id }).eq('email', matchingUser.email);
+        setUsers(prev => prev.map(u => u.email.toLowerCase() === email ? { ...u, role: 'Super Admin', status: 'Active' as const, org_id: targetOrgId } : u));
+        await supabase.from('users').update({ role: 'Super Admin', status: 'Active', id: authUser.id, org_id: targetOrgId }).eq('email', matchingUser.email);
       } else if (matchingUser.status === 'Pending') {
         console.log(`[Peek] Transitioning user ${matchingUser.email} from Pending to Active`);
-        setUsers(prev => prev.map(u => u.id === matchingUser.id ? { ...u, status: 'Active' as const, id: authUser.id } : u));
-        await supabase.from('users').update({ status: 'Active', id: authUser.id }).eq('email', matchingUser.email);
+        setUsers(prev => prev.map(u => u.id === matchingUser.id ? { ...u, status: 'Active' as const, id: authUser.id, org_id: targetOrgId } : u));
+        await supabase.from('users').update({ status: 'Active', id: authUser.id, org_id: targetOrgId }).eq('email', matchingUser.email);
       }
     } else {
       const assignedRole = shouldBeSuperAdmin ? 'Super Admin' : (authUser.user_metadata?.role as string) || 'Super Admin';
-      console.log(`[Peek] ${email} signed in — auto-creating user record as '${assignedRole}'`);
+      console.log(`[Peek] ${email} signed in — auto-creating user record as '${assignedRole}' under org ${targetOrgId}`);
+      // Sanitize name — de-duplicate if metadata accidentally doubled it (e.g. "aswini m aswini m")
+      const rawName: string = (authUser.user_metadata?.name || email.split('@')[0]).trim();
+      const words = rawName.split(/\s+/);
+      const half = Math.floor(words.length / 2);
+      const cleanName = (words.length >= 2 && words.slice(0, half).join(' ').toLowerCase() === words.slice(half).join(' ').toLowerCase())
+        ? words.slice(0, half).join(' ')
+        : rawName;
       const newUser = {
         id: authUser.id,
-        name: authUser.user_metadata?.name || email.split('@')[0],
+        org_id: targetOrgId,
+        name: cleanName,
         email: authUser.email,
         role: assignedRole,
         status: 'Active' as const,
@@ -805,7 +943,7 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       name, description, type, active: true, action
     };
     setPolicies(prev => [...prev, newPolicy]);
-    const { error } = await supabase.from('policies').insert(newPolicy);
+    const { error } = await supabase.from('policies').insert({ ...newPolicy, org_id: currentOrgId });
     if (error) {
       console.error('addPolicy failed:', error.message);
       setPolicies(prev => prev.filter(p => p.id !== newPolicy.id)); // rollback
@@ -853,10 +991,11 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const inviteUser = async (name: string, email: string, role: string) => {
     const newUser: User = {
       id: 'u-' + Math.random().toString(36).substring(2, 7),
+      org_id: currentOrgId,
       name, email, role, status: 'Pending'
     };
     setUsers(prev => [...prev, newUser]);
-    const { error } = await supabase.from('users').insert(newUser);
+    const { error } = await supabase.from('users').insert({ ...newUser, org_id: currentOrgId });
     if (error) {
       console.error('inviteUser failed:', error.message);
       setUsers(prev => prev.filter(u => u.id !== newUser.id)); // rollback
@@ -904,7 +1043,7 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const id = 'key-' + Math.random().toString(36).substring(2, 9);
     const newKey: VirtualKey = {
       id,
-      org_id: 'org-default',
+      org_id: currentOrgId,
       team,
       name,
       key_prefix: prefix,
@@ -1065,14 +1204,13 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       status
     };
 
-    // Optimistic update
+    // Optimistic update — always keep in local state so it shows in Overview & Spend Analytics
     setRequests(prev => [...prev, newRequest]);
 
-    // Write to Supabase
-    const { error: reqErr } = await supabase.from('requests').insert(newRequest);
+    // Write to Supabase (best-effort — don't rollback on failure so UI stays consistent)
+    const { error: reqErr } = await supabase.from('requests').insert({ ...newRequest, org_id: currentOrgId });
     if (reqErr) {
-      console.error('routeGatewayRequest insert failed:', reqErr.message);
-      setRequests(prev => prev.filter(r => r.id !== newRequest.id)); // rollback
+      console.warn('[Peek] Request insert to Supabase failed (kept in local state):', reqErr.message);
     }
 
     if (!blockRequest && budgets[team]) {
@@ -1119,8 +1257,86 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  // ─── Provider Connection & Model Discovery ─────────────────────────────────
+
+  const connectProviderWithCredentials = async (
+    providerId: string,
+    apiKey: string,
+    _endpoint?: string,
+    _region?: string
+  ): Promise<{ success: boolean; models: string[]; error?: string }> => {
+    try {
+      const discovered = DISCOVERABLE_MODELS[providerId] || [
+        { id: `${providerId}-custom-model`, name: `${providerId} Default Model`, providerId, providerName: providerId, status: 'Active', capabilities: ['Code'], contextWindow: '128,000 tokens', maxOutputTokens: '4,096 tokens', pricingPrompt: '$1.00 / 1M', pricingCompletion: '$3.00 / 1M' }
+      ];
+      const modelIds = discovered.map(m => m.id);
+
+      // Mask key for security: e.g. "sk-proj-••••••••••••abcd"
+      const maskedKey = apiKey.length > 8
+        ? `${apiKey.slice(0, 7)}••••••••••••${apiKey.slice(-4)}`
+        : '••••••••••••';
+
+      const existingProv = providers.find(p => p.id === providerId);
+      const provName = existingProv?.name || (providerId.charAt(0).toUpperCase() + providerId.slice(1));
+
+      const updatedProv: Provider = {
+        id: providerId,
+        name: provName,
+        status: 'connected',
+        apiKey: maskedKey,
+        models: modelIds
+      };
+
+      setProviders(prev => {
+        const idx = prev.findIndex(p => p.id === providerId);
+        if (idx >= 0) {
+          const copy = [...prev];
+          copy[idx] = updatedProv;
+          return copy;
+        }
+        return [...prev, updatedProv];
+      });
+
+      await supabase.from('providers').upsert({
+        id: providerId,
+        name: provName,
+        status: 'connected',
+        api_key: maskedKey,
+        models: modelIds,
+        org_id: currentOrgId
+      });
+
+      return { success: true, models: modelIds };
+    } catch (err: any) {
+      return { success: false, models: [], error: err.message || 'Failed to connect provider' };
+    }
+  };
+
+  const sendPasswordResetEmail = async (email: string): Promise<{ success: boolean; error?: string }> => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + '/'
+    });
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  };
+
+  // Compute connected models inventory across all connected providers
+  const connectedModels: ConnectedModel[] = providers
+    .filter(p => p.status === 'connected')
+    .flatMap(p => {
+      const known = DISCOVERABLE_MODELS[p.id] || [];
+      return known.map(m => {
+        const reqCount = requests.filter(r => r.provider === p.id && r.model === m.id).length;
+        return { ...m, requestsCount: reqCount };
+      });
+    });
+
   return (
     <StateContext.Provider value={{
+      organizations, currentOrganization, switchOrganization, createOrganization, updateOrganization,
+      connectedModels, connectProviderWithCredentials, sendPasswordResetEmail,
       providers, requests, policies, budgets, recommendations, outcomes, users, notifications, apiKeys,
       channels, enterpriseIntegrations, loading, error, currentUserRole,
       updateBudgetLimit, togglePolicy, addPolicy,

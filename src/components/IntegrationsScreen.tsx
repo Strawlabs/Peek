@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAppState, type ChannelConfig, type EnterpriseIntegration } from '../context/StateContext';
+import { ProviderConnectionWizard } from './ProviderConnectionWizard';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -428,6 +429,7 @@ export const IntegrationsScreen: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'providers' | 'virtual_keys' | 'enterprise' | 'notifications'>('providers');
   const [modalChannel, setModalChannel] = useState<ChannelConfig | null>(null);
   const [modalIntegration, setModalIntegration] = useState<EnterpriseIntegration | null>(null);
+  const [showWizard, setShowWizard] = useState(false);
 
   // Virtual Key form state
   const [showKeyForm, setShowKeyForm] = useState(false);
@@ -474,17 +476,32 @@ export const IntegrationsScreen: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      <ProviderConnectionWizard
+        isOpen={showWizard}
+        onClose={() => setShowWizard(false)}
+      />
+
       {/* Header */}
-      <header className="mb-6">
-        <nav className="flex items-center gap-2 text-body-sm text-on-surface-variant mb-2">
-          <span>Platform</span>
-          <span className="material-symbols-outlined text-[14px]">chevron_right</span>
-          <span className="text-primary font-bold">Integrations</span>
-        </nav>
-        <h2 className="font-headline-lg text-headline-lg text-on-surface">Integrations Hub</h2>
-        <p className="font-body-md text-body-md text-on-surface-variant mt-1">
-          Connect Peek to your LLM providers, observability stack, and enterprise messaging tools.
-        </p>
+      <header className="mb-6 flex justify-between items-end">
+        <div>
+          <nav className="flex items-center gap-2 text-body-sm text-on-surface-variant mb-2">
+            <span>Platform</span>
+            <span className="material-symbols-outlined text-[14px]">chevron_right</span>
+            <span className="text-primary font-bold">Integrations</span>
+          </nav>
+          <h2 className="font-headline-lg text-headline-lg text-on-surface font-bold">Integrations Hub</h2>
+          <p className="font-body-md text-body-md text-on-surface-variant mt-1">
+            Connect Peek to your LLM providers, observability stack, and enterprise messaging tools.
+          </p>
+        </div>
+
+        <button
+          onClick={() => setShowWizard(true)}
+          className="flex items-center gap-2 bg-primary text-on-primary px-4 py-2.5 rounded-xl font-label-md hover:opacity-90 transition-all shadow-lg shadow-primary/20 cursor-pointer"
+        >
+          <span className="material-symbols-outlined text-[18px]">add_link</span>
+          Connect Provider Credentials Wizard
+        </button>
       </header>
 
       {/* Tabs */}
@@ -512,7 +529,21 @@ export const IntegrationsScreen: React.FC = () => {
 
       {/* ── Tab: LLM Providers ─────────────────────────────────────────────── */}
       {activeTab === 'providers' && (
-        <div>
+        <div className="space-y-4">
+          <div className="flex justify-between items-center bg-surface-container/60 p-4 rounded-xl border border-outline-variant/30">
+            <div>
+              <h3 className="font-headline-sm text-headline-sm font-bold text-on-surface">Secure Provider Credentials</h3>
+              <p className="text-xs text-on-surface-variant mt-0.5">Encrypted API credentials & auto-discovered model endpoints.</p>
+            </div>
+            <button
+              onClick={() => setShowWizard(true)}
+              className="px-3 py-1.5 bg-primary/10 text-primary border border-primary/20 hover:bg-primary hover:text-on-primary rounded-lg text-xs font-bold transition-all flex items-center gap-1.5"
+            >
+              <span className="material-symbols-outlined text-[16px]">manage_search</span>
+              Run Model Discovery Wizard
+            </button>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {providers.map((p) => (
               <div key={p.id} className="glass-card rounded-xl p-6 flex flex-col justify-between">
@@ -536,12 +567,21 @@ export const IntegrationsScreen: React.FC = () => {
                     {p.status}
                   </span>
                 </div>
-                <button
-                  onClick={() => toggleProvider(p.id)}
-                  className="mt-4 py-2 border border-outline-variant rounded-lg text-xs font-bold text-primary hover:bg-surface-variant transition-all"
-                >
-                  {p.status === 'connected' ? 'Disconnect' : 'Connect'}
-                </button>
+                <div className="flex gap-2 mt-4">
+                  <button
+                    onClick={() => toggleProvider(p.id)}
+                    className="flex-1 py-2 border border-outline-variant rounded-lg text-xs font-bold text-on-surface hover:bg-surface-variant transition-all cursor-pointer"
+                  >
+                    {p.status === 'connected' ? 'Disconnect' : 'Connect'}
+                  </button>
+                  <button
+                    onClick={() => setShowWizard(true)}
+                    className="px-3 py-2 bg-primary/10 border border-primary/20 text-primary rounded-lg text-xs font-bold hover:bg-primary hover:text-on-primary transition-all cursor-pointer"
+                    title="Configure & Discover Models"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">settings</span>
+                  </button>
+                </div>
               </div>
             ))}
           </div>

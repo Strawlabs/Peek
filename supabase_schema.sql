@@ -111,33 +111,45 @@ alter table public.recommendations enable row level security;
 alter table public.outcomes enable row level security;
 alter table public.users enable row level security;
 
--- 3. Create RLS Policies for Public/Anon Access (Read & Write)
-create policy "Allow public read" on public.organizations for select using (true);
-create policy "Allow public write" on public.organizations for all using (true) with check (true);
+-- Helper function to get current user's organization ID
+create or replace function public.get_my_org_id()
+returns text
+language sql stable security definer
+as $$
+  select coalesce(
+    (nullif(current_setting('request.jwt.claims', true), '')::jsonb -> 'user_metadata' ->> 'org_id'),
+    (select org_id from public.users where id = auth.uid()::text limit 1),
+    'org-default'
+  );
+$$;
 
-create policy "Allow public read" on public.providers for select using (true);
-create policy "Allow public write" on public.providers for all using (true) with check (true);
+-- 3. Create Tenant Isolation RLS Policies
+create policy "org_select" on public.organizations for select using (true);
+create policy "org_all" on public.organizations for all using (true);
 
-create policy "Allow public read" on public.api_keys for select using (true);
-create policy "Allow public write" on public.api_keys for all using (true) with check (true);
+create policy "providers_select" on public.providers for select using (org_id = public.get_my_org_id());
+create policy "providers_all" on public.providers for all using (org_id = public.get_my_org_id()) with check (org_id = public.get_my_org_id());
 
-create policy "Allow public read" on public.requests for select using (true);
-create policy "Allow public write" on public.requests for all using (true) with check (true);
+create policy "api_keys_select" on public.api_keys for select using (org_id = public.get_my_org_id());
+create policy "api_keys_all" on public.api_keys for all using (org_id = public.get_my_org_id()) with check (org_id = public.get_my_org_id());
 
-create policy "Allow public read" on public.policies for select using (true);
-create policy "Allow public write" on public.policies for all using (true) with check (true);
+create policy "requests_select" on public.requests for select using (org_id = public.get_my_org_id());
+create policy "requests_all" on public.requests for all using (org_id = public.get_my_org_id()) with check (org_id = public.get_my_org_id());
 
-create policy "Allow public read" on public.budgets for select using (true);
-create policy "Allow public write" on public.budgets for all using (true) with check (true);
+create policy "policies_select" on public.policies for select using (org_id = public.get_my_org_id());
+create policy "policies_all" on public.policies for all using (org_id = public.get_my_org_id()) with check (org_id = public.get_my_org_id());
 
-create policy "Allow public read" on public.recommendations for select using (true);
-create policy "Allow public write" on public.recommendations for all using (true) with check (true);
+create policy "budgets_select" on public.budgets for select using (org_id = public.get_my_org_id());
+create policy "budgets_all" on public.budgets for all using (org_id = public.get_my_org_id()) with check (org_id = public.get_my_org_id());
 
-create policy "Allow public read" on public.outcomes for select using (true);
-create policy "Allow public write" on public.outcomes for all using (true) with check (true);
+create policy "recommendations_select" on public.recommendations for select using (org_id = public.get_my_org_id());
+create policy "recommendations_all" on public.recommendations for all using (org_id = public.get_my_org_id()) with check (org_id = public.get_my_org_id());
 
-create policy "Allow public read" on public.users for select using (true);
-create policy "Allow public write" on public.users for all using (true) with check (true);
+create policy "outcomes_select" on public.outcomes for select using (org_id = public.get_my_org_id());
+create policy "outcomes_all" on public.outcomes for all using (org_id = public.get_my_org_id()) with check (org_id = public.get_my_org_id());
+
+create policy "users_select" on public.users for select using (org_id = public.get_my_org_id());
+create policy "users_all" on public.users for all using (org_id = public.get_my_org_id()) with check (org_id = public.get_my_org_id());
 
 -- 4. Initial Seed Data
 insert into public.organizations (id, name) values
