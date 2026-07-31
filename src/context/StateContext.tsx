@@ -1,6 +1,6 @@
-/* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { generateDynamicRecommendations } from '../utils/aiRecommendationEngine';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -160,6 +160,24 @@ export const PROVIDER_PRICING: Record<string, Record<string, { input: number; ou
   },
   local: {
     'llama-3-local': { input: 0.00, output: 0.00 }
+  }
+};
+
+const getStoredRequests = (): TelemetryRequest[] => {
+  try {
+    const raw = localStorage.getItem('peek_telemetry_requests');
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    console.warn('Failed to parse peek_telemetry_requests from localStorage:', e);
+    return [];
+  }
+};
+
+const saveStoredRequests = (reqs: TelemetryRequest[]) => {
+  try {
+    localStorage.setItem('peek_telemetry_requests', JSON.stringify(reqs));
+  } catch (e) {
+    console.warn('Failed to save peek_telemetry_requests to localStorage:', e);
   }
 };
 
@@ -341,6 +359,7 @@ interface StateContextType {
     prompt: string, provider: string, model: string,
     team: string, environment: string, workflow: string, customer: string
   ) => Promise<{ success: boolean; trace: string[]; cost: number; tokens: number; latency: number }>;
+  runRecommendationScan: () => void;
   resetSystemState: () => Promise<void>;
   authSession: any | null;
   signOut: () => Promise<void>;
@@ -646,7 +665,6 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           if (seedRecErr) console.warn('Recommendations seed error:', seedRecErr.message);
           liveRecs = (seededRec || SEED_RECOMMENDATIONS) as Recommendation[];
         }
-        setRecommendations(liveRecs);
 
         // ── Seed outcomes if empty ───────────────────────────────────────────
         let liveOutcomes: Outcome[] = forCurrentOrg(oData).map(o => mapOutcome(o as Record<string, unknown>));
@@ -669,10 +687,17 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setUsers(liveUsers);
         setApiKeys(forCurrentOrg(kData) as VirtualKey[]);
 
-        // ── Seed telemetry requests if empty (uses live providers from DB) ───
-        let liveRequests: TelemetryRequest[] = forCurrentOrg(rData) as TelemetryRequest[];
+        // ── Load & Merge telemetry requests from Supabase + LocalStorage ─────
+        const dbReqs: TelemetryRequest[] = forCurrentOrg(rData) as TelemetryRequest[];
+        const cachedReqs: TelemetryRequest[] = getStoredRequests();
+        const reqMap = new Map<string, TelemetryRequest>();
+        dbReqs.forEach(r => reqMap.set(r.id, r));
+        cachedReqs.forEach(r => { if (!reqMap.has(r.id)) reqMap.set(r.id, r); });
+
+        let liveRequests = Array.from(reqMap.values()).sort((a, b) => a.timestamp - b.timestamp);
+
         if (liveRequests.length === 0 && liveProviders.some(p => p.status === 'connected')) {
-          console.log('[Peek] Seeding historical telemetry requests into Supabase...');
+          console.log('[Peek] Seeding historical telemetry requests into Supabase & LocalStorage...');
           const { requests: seedReqs, budgetSpend } = generateSeedRequests(liveProviders, currentOrgId);
           const batchSize = 300;
           for (let i = 0; i < seedReqs.length; i += batchSize) {
@@ -688,7 +713,19 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           setBudgets({ ...liveBudgets });
           liveRequests = seedReqs;
         }
+
         setRequests(liveRequests);
+        saveStoredRequests(liveRequests);
+
+        // ── Dynamically generate AI recommendations based on live telemetry ──
+        const dynamicRecs = generateDynamicRecommendations(
+          liveRequests,
+          livePolicies,
+          liveBudgets,
+          liveProviders,
+          liveRecs
+        );
+        setRecommendations(dynamicRecs);
 
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Unknown database error';
@@ -1204,8 +1241,13 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       status
     };
 
-    // Optimistic update — always keep in local state so it shows in Overview & Spend Analytics
-    setRequests(prev => [...prev, newRequest]);
+    // Optimistic update — keep in local state AND local storage so it NEVER disappears
+    setRequests(prev => {
+      const updated = [...prev, newRequest];
+      saveStoredRequests(updated);
+      setRecommendations(prevRecs => generateDynamicRecommendations(updated, policies, budgets, providers, prevRecs));
+      return updated;
+    });
 
     // Write to Supabase (best-effort — don't rollback on failure so UI stays consistent)
     const { error: reqErr } = await supabase.from('requests').insert({ ...newRequest, org_id: currentOrgId });
@@ -1247,9 +1289,11 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         await supabase.from('budgets').update({ spent: budgetSpend[team] }).eq('team', team);
         if (freshBudgets[team]) freshBudgets[team] = { ...freshBudgets[team], spent: budgetSpend[team] };
       }
+      localStorage.removeItem('peek_telemetry_requests');
       setRequests(seedReqs);
-      setBudgets(freshBudgets);
-      setRecommendations(prev => prev.map(r => ({ ...r, status: 'active' as const })));
+      saveStoredRequests(seedReqs);
+      const freshRecs = generateDynamicRecommendations(seedReqs, policies, freshBudgets, providers, []);
+      setRecommendations(freshRecs);
     } catch (err) {
       console.error('resetSystemState error:', err);
     } finally {
@@ -1333,6 +1377,10 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
     });
 
+  const runRecommendationScan = () => {
+    setRecommendations(prev => generateDynamicRecommendations(requests, policies, budgets, providers, prev));
+  };
+
   return (
     <StateContext.Provider value={{
       organizations, currentOrganization, switchOrganization, createOrganization, updateOrganization,
@@ -1344,7 +1392,7 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       inviteUser, deleteUser, updateUserRole, activateUser,
       generateVirtualKey, revokeVirtualKey,
       sendTestNotification, updateChannelConfig, updateEnterpriseIntegration,
-      routeGatewayRequest, resetSystemState,
+      routeGatewayRequest, runRecommendationScan, resetSystemState,
       authSession, signOut, updatePassword
     }}>
       {children}

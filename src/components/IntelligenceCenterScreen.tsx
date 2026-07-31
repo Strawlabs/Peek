@@ -1,8 +1,19 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAppState } from '../context/StateContext';
 
 export const IntelligenceCenterScreen: React.FC = () => {
-  const { recommendations, applyRecommendation, dismissRecommendation, currentUserRole } = useAppState();
+  const { recommendations, applyRecommendation, dismissRecommendation, currentUserRole, runRecommendationScan } = useAppState();
+  const [isScanning, setIsScanning] = useState(false);
+  const [lastScanTime, setLastScanTime] = useState<string | null>(null);
+
+  const handleRunScan = () => {
+    setIsScanning(true);
+    setTimeout(() => {
+      runRecommendationScan();
+      setIsScanning(false);
+      setLastScanTime(new Date().toLocaleTimeString());
+    }, 600);
+  };
 
   const activeRecs = recommendations.filter((r) => r.status === 'active');
   const appliedRecs = recommendations.filter((r) => r.status === 'applied');
@@ -19,14 +30,33 @@ export const IntelligenceCenterScreen: React.FC = () => {
           </nav>
           <h2 className="font-headline-lg text-headline-lg text-on-surface">AI Optimization Intelligence</h2>
           <p className="font-body-md text-body-md text-on-surface-variant mt-1">
-            Actionable recommendations to reduce cost, improve governance, and optimize model usage.
+            Actionable dynamic recommendations calculated in real time from live telemetry logs.
           </p>
         </div>
-        <div className="glass-card rounded-xl px-6 py-3 text-right">
-          <span className="text-[10px] font-bold text-outline uppercase tracking-wider">Potential Monthly Savings</span>
-          <p className="text-headline-md font-bold text-primary">${totalSavings.toLocaleString()}</p>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleRunScan}
+            disabled={isScanning}
+            className="flex items-center gap-2 bg-gradient-to-r from-primary to-emerald-500 text-on-primary px-4 py-2.5 rounded-xl font-label-md hover:opacity-90 transition-all shadow-md disabled:opacity-50"
+          >
+            <span className={`material-symbols-outlined text-[20px] ${isScanning ? 'animate-spin' : ''}`}>
+              {isScanning ? 'autorenew' : 'psychology'}
+            </span>
+            {isScanning ? 'Analyzing Telemetry Streams...' : 'Run Live AI Optimization Scan'}
+          </button>
+          <div className="glass-card rounded-xl px-6 py-2.5 text-right">
+            <span className="text-[10px] font-bold text-outline uppercase tracking-wider">Potential Monthly Savings</span>
+            <p className="text-headline-md font-bold text-primary">${totalSavings.toLocaleString()}</p>
+          </div>
         </div>
       </header>
+
+      {lastScanTime && (
+        <div className="flex items-center gap-2 text-xs text-emerald-400 bg-emerald-950/30 border border-emerald-800/40 px-4 py-2 rounded-lg">
+          <span className="material-symbols-outlined text-[16px]">check_circle</span>
+          <span>Dynamic telemetry analysis complete — Recommendations refreshed at {lastScanTime}</span>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="glass-card rounded-xl p-6">

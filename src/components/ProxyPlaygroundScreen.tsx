@@ -78,7 +78,7 @@ export const ProxyPlaygroundScreen: React.FC = () => {
                 const totalTokens = apiData.usage?.total_tokens || 0;
                 const elapsedSec = parseFloat(((performance.now() - startMs) / 1000).toFixed(2));
                 traceLog.push(`[PROXY] OpenAI responded in ${elapsedSec}s. tokens=${totalTokens}`);
-                traceLog.push(`[TELEMETRY] Live request logged to Peek telemetry.`);
+                traceLog.push(`[TELEMETRY] Live request recorded and persisted to Peek storage & database.`);
                 setTrace(traceLog);
                 setResult({ success: true, cost: response.cost, tokens: totalTokens, latency: elapsedSec, responseText: content });
               } else {
@@ -96,7 +96,7 @@ export const ProxyPlaygroundScreen: React.FC = () => {
             // No real API key — show realistic simulated live response
             traceLog.push(`[PROXY] Demo mode: No live API key configured for ${provider}. Returning governed simulation.`);
             traceLog.push(`[PROXY] Upstream responded in ${response.latency}s. Cost: $${response.cost.toFixed(5)}`);
-            traceLog.push(`[TELEMETRY] Request logged to Peek telemetry (org: ${team})`);
+            traceLog.push(`[TELEMETRY] Request recorded and persisted to Peek storage & database (org: ${team})`);
             setTrace(traceLog);
             setResult({
               success: true,
