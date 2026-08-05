@@ -9,13 +9,14 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ currentScreen, setScreen, mobileOpen, setMobileOpen }) => {
-  const { currentUserRole, authSession } = useAppState();
+  const { currentUserRole, currentOrganization } = useAppState();
 
   const menuItems = [
     { id: 'overview', name: 'Executive Overview', icon: 'dashboard' },
     { id: 'spend', name: 'AI Spend Analytics', icon: 'payments' },
     { id: 'governance', name: 'Governance Center', icon: 'gavel' },
     { id: 'intelligence', name: 'Intelligence Center', icon: 'psychology' },
+    { id: 'models', name: 'Connected Models', icon: 'inventory_2' },
     { id: 'tba', name: 'Token Benefit Analysis™', icon: 'generating_tokens' },
     { id: 'reports', name: 'Reports Center', icon: 'description' },
     { id: 'integrations', name: 'Integrations', icon: 'extension' },
@@ -27,9 +28,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentScreen, setScreen, mobi
   const adminItems = [
     { id: 'sandbox', name: 'Proxy Playground', icon: 'terminal', highlight: true },
     { id: 'users', name: 'Users & Permissions', icon: 'group' },
+    { id: 'orgs', name: 'Organizations', icon: 'domain' },
     { id: 'settings', name: 'Organization Settings', icon: 'settings' },
   ].filter(item => {
-    if (currentUserRole === 'Viewer' && item.id === 'users') return false;
+    if (currentUserRole === 'Viewer' && (item.id === 'users' || item.id === 'orgs')) return false;
     return true;
   });
 
@@ -71,8 +73,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentScreen, setScreen, mobi
                 {currentUserRole}
               </span>
             </div>
-            <p className="font-body-sm text-body-sm text-on-surface-variant opacity-70 truncate mt-0.5">
-              {authSession?.email || 'AI Governance Platform'}
+            <p className="font-body-sm text-body-sm text-on-surface-variant opacity-80 truncate mt-0.5 flex items-center gap-1 font-mono">
+              <span className="material-symbols-outlined text-[12px] text-primary">corporate_fare</span>
+              <span>{currentOrganization.name}</span>
             </p>
           </div>
 

@@ -16,9 +16,23 @@ export const Header: React.FC<HeaderProps> = ({
   setSearchQuery,
   onMenuToggle,
 }) => {
-  const { authSession, signOut, notifications, currentUserRole } = useAppState();
+  const { authSession, signOut, notifications, currentUserRole, currentOrganization } = useAppState();
   const [showDropdown, setShowDropdown] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [readCount, setReadCount] = useState(0);
+
+  const unreadCount = Math.max(0, notifications.length - readCount);
+
+  const openNotifications = () => {
+    setShowNotifications(prev => {
+      if (!prev) {
+        // Mark all current notifications as read when opening
+        setReadCount(notifications.length);
+      }
+      return !prev;
+    });
+    setShowDropdown(false);
+  };
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 md:px-8 h-16 bg-background/85 backdrop-blur-md border-b border-outline-variant">
@@ -40,13 +54,19 @@ export const Header: React.FC<HeaderProps> = ({
           <span className="hidden sm:inline">Peek</span>
         </span>
 
-        <div className="hidden md:flex items-center bg-surface-container border border-outline-variant px-4 py-1.5 rounded-lg w-56 lg:w-96 focus-within:border-primary transition-all">
+        {/* Organization Name Badge */}
+        <div className="flex items-center gap-2 bg-surface-container/70 border border-outline-variant/60 px-3 py-1.5 rounded-lg text-xs">
+          <span className="material-symbols-outlined text-[16px] text-primary">corporate_fare</span>
+          <span className="font-bold text-on-surface truncate max-w-[110px] md:max-w-[160px]">{currentOrganization.name}</span>
+        </div>
+
+        <div className="hidden md:flex items-center bg-surface-container border border-outline-variant px-4 py-1.5 rounded-lg w-48 lg:w-80 focus-within:border-primary transition-all">
           <span className="material-symbols-outlined text-outline text-[20px] mr-2">search</span>
           <input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="bg-transparent border-none focus:ring-0 text-body-sm w-full placeholder:text-on-surface-variant focus:outline-none text-on-surface"
-            placeholder="Search telemetry, insights, policies..."
+            placeholder="Search telemetry, policies..."
             type="text"
           />
         </div>
@@ -64,17 +84,16 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center gap-1 text-on-surface-variant">
           <div className="relative">
             <span
-              onClick={() => {
-                setShowNotifications(!showNotifications);
-                setShowDropdown(false);
-              }}
+              onClick={openNotifications}
               className="material-symbols-outlined p-2 hover:bg-surface-variant rounded-full cursor-pointer transition-colors text-[22px]"
               title="Notifications"
             >
               notifications
             </span>
-            {notifications.length > 0 && (
-              <span className="absolute top-1 right-1 w-2 h-2 bg-rose-500 rounded-full animate-pulse border border-background"></span>
+            {unreadCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 bg-rose-500 text-white rounded-full text-[10px] font-bold flex items-center justify-center border-2 border-background animate-pulse">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
             )}
 
             {showNotifications && (
@@ -82,7 +101,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <div className="px-4 py-3 border-b border-outline-variant/30 flex justify-between items-center bg-surface-container-highest sticky top-0">
                   <h3 className="font-bold text-sm text-on-surface">Notifications</h3>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-primary font-bold bg-primary/10 px-2 py-0.5 rounded-full">{notifications.length} New</span>
+                    <span className="text-xs text-on-surface-variant bg-surface-variant px-2 py-0.5 rounded-full">{notifications.length} total</span>
                     <button onClick={(e) => { e.stopPropagation(); setShowNotifications(false); }} className="hover:bg-surface-variant rounded-full text-on-surface-variant transition-colors flex items-center justify-center p-0.5">
                       <span className="material-symbols-outlined text-[18px]">close</span>
                     </button>

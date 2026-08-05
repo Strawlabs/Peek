@@ -13,6 +13,7 @@ interface InviteRequest {
   email: string;
   name: string;
   role: string;
+  org_id?: string;
   redirectTo?: string;
 }
 
@@ -29,7 +30,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { email, name, role, redirectTo } = (await req.json()) as InviteRequest;
+    const { email, name, role, org_id, redirectTo } = (await req.json()) as InviteRequest;
 
     if (!email || !name || !role) {
       return new Response(
@@ -37,6 +38,8 @@ Deno.serve(async (req: Request) => {
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    const targetOrgId = org_id || 'org-default';
 
     // Admin client — uses service role key (safe here, server-side only)
     const supabaseAdmin = createClient(
@@ -79,10 +82,10 @@ Deno.serve(async (req: Request) => {
       }
     } else {
       // Brand new user — send invitation email
-      console.log(`[invite-user] ${email} is a new user — sending invite email`);
+      console.log(`[invite-user] ${email} is a new user — sending invite email for org ${targetOrgId}`);
       const { data: authData, error: authError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
         email,
-        { data: { name, role }, redirectTo: finalRedirectTo }
+        { data: { name, role, org_id: targetOrgId }, redirectTo: finalRedirectTo }
       );
 
       if (authError) {
@@ -101,7 +104,7 @@ Deno.serve(async (req: Request) => {
     const { error: dbError } = await supabaseAdmin
       .from('users')
       .upsert(
-        { id: userId, name, email, role, status: 'Pending' },
+        { id: userId, org_id: targetOrgId, name, email, role, status: 'Pending' },
         { onConflict: 'email' }
       );
 
