@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useAppState, DISCOVERABLE_MODELS } from '../context/StateContext';
+import { useAppState, DISCOVERABLE_MODELS, type ConnectedModel } from '../context/StateContext';
 
 export const ConnectedModelsInventoryScreen: React.FC = () => {
   const { connectedModels, providers, currentOrganization } = useAppState();
@@ -17,7 +17,7 @@ export const ConnectedModelsInventoryScreen: React.FC = () => {
   const filteredModels = displayModels.filter(m => {
     const matchSearch = m.name.toLowerCase().includes(search.toLowerCase()) || m.id.toLowerCase().includes(search.toLowerCase());
     const matchProvider = providerFilter === 'All' || m.providerId === providerFilter;
-    const matchCapability = capabilityFilter === 'All' || m.capabilities.includes(capabilityFilter as any);
+    const matchCapability = capabilityFilter === 'All' || m.capabilities.includes(capabilityFilter as ConnectedModel['capabilities'][number]);
     return matchSearch && matchProvider && matchCapability;
   });
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useAppState, DISCOVERABLE_MODELS } from '../context/StateContext';
+import { useAppState, DISCOVERABLE_MODELS, type ConnectedModel } from '../context/StateContext';
 
 interface ProviderConnectionWizardProps {
   isOpen: boolean;
@@ -29,7 +29,7 @@ export const ProviderConnectionWizard: React.FC<ProviderConnectionWizardProps> =
   const [endpointUrl, setEndpointUrl] = useState<string>('');
   const [region, setRegion] = useState<string>('us-east-1');
   const [testing, setTesting] = useState<boolean>(false);
-  const [discoveredModels, setDiscoveredModels] = useState<any[]>([]);
+  const [discoveredModels, setDiscoveredModels] = useState<ConnectedModel[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   if (!isOpen) return null;
@@ -87,7 +87,7 @@ export const ProviderConnectionWizard: React.FC<ProviderConnectionWizardProps> =
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-4 animate-fade-in">
       <div className="glass-card rounded-2xl p-6 md:p-8 max-w-2xl w-full border border-outline-variant shadow-2xl space-y-6 bg-surface-container-high/90">
-        
+
         {/* Step Indicator Header */}
         <div className="flex items-center justify-between border-b border-outline-variant/30 pb-4">
           <div>

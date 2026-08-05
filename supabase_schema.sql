@@ -115,6 +115,7 @@ alter table public.users enable row level security;
 create or replace function public.get_my_org_id()
 returns text
 language sql stable security definer
+set search_path = public, pg_temp
 as $$
   select coalesce(
     (nullif(current_setting('request.jwt.claims', true), '')::jsonb -> 'user_metadata' ->> 'org_id'),
@@ -124,8 +125,8 @@ as $$
 $$;
 
 -- 3. Create Tenant Isolation RLS Policies
-create policy "org_select" on public.organizations for select using (true);
-create policy "org_all" on public.organizations for all using (true);
+create policy "org_select" on public.organizations for select using (id = public.get_my_org_id());
+create policy "org_all" on public.organizations for all using (id = public.get_my_org_id()) with check (id = public.get_my_org_id());
 
 create policy "providers_select" on public.providers for select using (org_id = public.get_my_org_id());
 create policy "providers_all" on public.providers for all using (org_id = public.get_my_org_id()) with check (org_id = public.get_my_org_id());

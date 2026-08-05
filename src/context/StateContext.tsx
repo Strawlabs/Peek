@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { generateDynamicRecommendations } from '../utils/aiRecommendationEngine';
@@ -283,7 +284,7 @@ function generateSeedRequests(dbProviders: Provider[], orgId: string = 'org-defa
       project: 'Project-' + ['Phoenix', 'Sentinel', 'Keystone', 'Nebula'][Math.floor(Math.random() * 4)],
       department, workflow, customer: customers[Math.floor(Math.random() * customers.length)],
       prompt, response: `Simulated response from ${model}. Processed ${tokensIn + tokensOut} tokens in ${latency}s.`, status
-    } as any);
+    } as TelemetryRequest);
     budgetSpend[team] = (budgetSpend[team] || 0) + cost;
   }
   newRequests.sort((a, b) => a.timestamp - b.timestamp);
@@ -453,7 +454,7 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const updated = organizations.map(o => o.id === id ? { ...o, ...updates } : o);
     setOrganizations(updated);
     localStorage.setItem('peek_organizations', JSON.stringify(updated));
-    await supabase.from('organizations').update(updates as any).eq('id', id);
+    await supabase.from('organizations').update(updates).eq('id', id);
   };
 
   const [providers, setProviders] = useState<Provider[]>([]);
@@ -616,7 +617,7 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (kErr) console.warn('api_keys fetch warning:', kErr.message);
 
         // Helper to filter rows for current organization
-        const forCurrentOrg = <T extends Record<string, any>>(rows: T[] | null): T[] => {
+        const forCurrentOrg = <T extends Record<string, unknown>>(rows: T[] | null): T[] => {
           if (!rows) return [];
           return rows.filter(row => !row.org_id || row.org_id === currentOrgId);
         };
@@ -1310,6 +1311,8 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     _region?: string
   ): Promise<{ success: boolean; models: string[]; error?: string }> => {
     try {
+      void _endpoint;
+      void _region;
       const discovered = DISCOVERABLE_MODELS[providerId] || [
         { id: `${providerId}-custom-model`, name: `${providerId} Default Model`, providerId, providerName: providerId, status: 'Active', capabilities: ['Code'], contextWindow: '128,000 tokens', maxOutputTokens: '4,096 tokens', pricingPrompt: '$1.00 / 1M', pricingCompletion: '$3.00 / 1M' }
       ];
@@ -1351,8 +1354,8 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
 
       return { success: true, models: modelIds };
-    } catch (err: any) {
-      return { success: false, models: [], error: err.message || 'Failed to connect provider' };
+    } catch (err: unknown) {
+      return { success: false, models: [], error: err instanceof Error ? err.message : 'Failed to connect provider' };
     }
   };
 

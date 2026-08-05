@@ -30,8 +30,9 @@ export const OrganizationManagementScreen: React.FC = () => {
       showNotification(`🎉 Organization "${newOrgName}" created and activated!`, 'success');
       setNewOrgName('');
       setShowCreateModal(false);
-    } catch (err: any) {
-      showNotification(`Failed to create organization: ${err.message}`, 'error');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      showNotification(`Failed to create organization: ${message}`, 'error');
     } finally {
       setSubmitting(false);
     }
@@ -198,7 +199,7 @@ export const OrganizationManagementScreen: React.FC = () => {
                 <label className="block text-xs font-bold text-on-surface-variant uppercase mb-1.5">Subscription Plan</label>
                 <select
                   value={newPlan}
-                  onChange={(e) => setNewPlan(e.target.value as any)}
+                  onChange={(e) => setNewPlan(e.target.value as 'Starter' | 'Pro' | 'Enterprise')}
                   className="w-full bg-surface-container border border-outline-variant rounded-xl px-3.5 py-2.5 text-body-sm text-on-surface focus:outline-none"
                 >
                   <option value="Starter">Starter Plan</option>

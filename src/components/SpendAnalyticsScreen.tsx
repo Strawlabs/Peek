@@ -16,7 +16,7 @@ export const SpendAnalyticsScreen: React.FC = () => {
     setCurrentPage(1);
   };
 
-  const now = Date.now();
+  const [now] = useState(() => Date.now());
   const dateRangeMs = dateRange === '7d' ? 7 * 86400000 : dateRange === '30d' ? 30 * 86400000 : Infinity;
   const prevRangeMs = dateRangeMs * 2;
 

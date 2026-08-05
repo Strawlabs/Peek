@@ -14,6 +14,7 @@ ALTER TABLE public.users ADD COLUMN IF NOT EXISTS org_id text DEFAULT 'org-defau
 CREATE OR REPLACE FUNCTION public.get_my_org_id()
 RETURNS text
 LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
   SELECT COALESCE(
     (nullif(current_setting('request.jwt.claims', true), '')::jsonb -> 'user_metadata' ->> 'org_id'),
@@ -43,29 +44,29 @@ DROP POLICY IF EXISTS "Allow public read" ON public.users;
 DROP POLICY IF EXISTS "Allow public write" ON public.users;
 
 -- Create tenant-isolated policies
-CREATE POLICY "org_select" ON public.organizations FOR SELECT USING (true);
-CREATE POLICY "org_all" ON public.organizations FOR ALL USING (true);
+CREATE POLICY "org_select" ON public.organizations FOR SELECT USING (id = public.get_my_org_id());
+CREATE POLICY "org_all" ON public.organizations FOR ALL USING (id = public.get_my_org_id()) WITH CHECK (id = public.get_my_org_id());
 
-CREATE POLICY "providers_select" ON public.providers FOR SELECT USING (org_id IS NULL OR org_id = public.get_my_org_id());
-CREATE POLICY "providers_all" ON public.providers FOR ALL USING (org_id IS NULL OR org_id = public.get_my_org_id()) WITH CHECK (org_id IS NULL OR org_id = public.get_my_org_id());
+CREATE POLICY "providers_select" ON public.providers FOR SELECT USING (org_id = public.get_my_org_id());
+CREATE POLICY "providers_all" ON public.providers FOR ALL USING (org_id = public.get_my_org_id()) WITH CHECK (org_id = public.get_my_org_id());
 
-CREATE POLICY "api_keys_select" ON public.api_keys FOR SELECT USING (org_id IS NULL OR org_id = public.get_my_org_id());
-CREATE POLICY "api_keys_all" ON public.api_keys FOR ALL USING (org_id IS NULL OR org_id = public.get_my_org_id()) WITH CHECK (org_id IS NULL OR org_id = public.get_my_org_id());
+CREATE POLICY "api_keys_select" ON public.api_keys FOR SELECT USING (org_id = public.get_my_org_id());
+CREATE POLICY "api_keys_all" ON public.api_keys FOR ALL USING (org_id = public.get_my_org_id()) WITH CHECK (org_id = public.get_my_org_id());
 
-CREATE POLICY "requests_select" ON public.requests FOR SELECT USING (org_id IS NULL OR org_id = public.get_my_org_id());
-CREATE POLICY "requests_all" ON public.requests FOR ALL USING (org_id IS NULL OR org_id = public.get_my_org_id()) WITH CHECK (org_id IS NULL OR org_id = public.get_my_org_id());
+CREATE POLICY "requests_select" ON public.requests FOR SELECT USING (org_id = public.get_my_org_id());
+CREATE POLICY "requests_all" ON public.requests FOR ALL USING (org_id = public.get_my_org_id()) WITH CHECK (org_id = public.get_my_org_id());
 
-CREATE POLICY "policies_select" ON public.policies FOR SELECT USING (org_id IS NULL OR org_id = public.get_my_org_id());
-CREATE POLICY "policies_all" ON public.policies FOR ALL USING (org_id IS NULL OR org_id = public.get_my_org_id()) WITH CHECK (org_id IS NULL OR org_id = public.get_my_org_id());
+CREATE POLICY "policies_select" ON public.policies FOR SELECT USING (org_id = public.get_my_org_id());
+CREATE POLICY "policies_all" ON public.policies FOR ALL USING (org_id = public.get_my_org_id()) WITH CHECK (org_id = public.get_my_org_id());
 
-CREATE POLICY "budgets_select" ON public.budgets FOR SELECT USING (org_id IS NULL OR org_id = public.get_my_org_id());
-CREATE POLICY "budgets_all" ON public.budgets FOR ALL USING (org_id IS NULL OR org_id = public.get_my_org_id()) WITH CHECK (org_id IS NULL OR org_id = public.get_my_org_id());
+CREATE POLICY "budgets_select" ON public.budgets FOR SELECT USING (org_id = public.get_my_org_id());
+CREATE POLICY "budgets_all" ON public.budgets FOR ALL USING (org_id = public.get_my_org_id()) WITH CHECK (org_id = public.get_my_org_id());
 
-CREATE POLICY "recommendations_select" ON public.recommendations FOR SELECT USING (org_id IS NULL OR org_id = public.get_my_org_id());
-CREATE POLICY "recommendations_all" ON public.recommendations FOR ALL USING (org_id IS NULL OR org_id = public.get_my_org_id()) WITH CHECK (org_id IS NULL OR org_id = public.get_my_org_id());
+CREATE POLICY "recommendations_select" ON public.recommendations FOR SELECT USING (org_id = public.get_my_org_id());
+CREATE POLICY "recommendations_all" ON public.recommendations FOR ALL USING (org_id = public.get_my_org_id()) WITH CHECK (org_id = public.get_my_org_id());
 
-CREATE POLICY "outcomes_select" ON public.outcomes FOR SELECT USING (org_id IS NULL OR org_id = public.get_my_org_id());
-CREATE POLICY "outcomes_all" ON public.outcomes FOR ALL USING (org_id IS NULL OR org_id = public.get_my_org_id()) WITH CHECK (org_id IS NULL OR org_id = public.get_my_org_id());
+CREATE POLICY "outcomes_select" ON public.outcomes FOR SELECT USING (org_id = public.get_my_org_id());
+CREATE POLICY "outcomes_all" ON public.outcomes FOR ALL USING (org_id = public.get_my_org_id()) WITH CHECK (org_id = public.get_my_org_id());
 
-CREATE POLICY "users_select" ON public.users FOR SELECT USING (org_id IS NULL OR org_id = public.get_my_org_id());
-CREATE POLICY "users_all" ON public.users FOR ALL USING (org_id IS NULL OR org_id = public.get_my_org_id()) WITH CHECK (org_id IS NULL OR org_id = public.get_my_org_id());
+CREATE POLICY "users_select" ON public.users FOR SELECT USING (org_id = public.get_my_org_id());
+CREATE POLICY "users_all" ON public.users FOR ALL USING (org_id = public.get_my_org_id()) WITH CHECK (org_id = public.get_my_org_id());
