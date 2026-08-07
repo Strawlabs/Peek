@@ -49,8 +49,19 @@ export const ProviderConnectionWizard: React.FC<ProviderConnectionWizardProps> =
     // Simulate real handshake verification latency
     await new Promise(r => setTimeout(r, 1200));
 
-    const discovered = DISCOVERABLE_MODELS[selectedProviderId] || [
-      { id: `${selectedProviderId}-default`, name: `${selectedProvObj.name} Default Model`, contextWindow: '128,000 tokens', capabilities: ['Code', 'Function Calling'] }
+    const discovered: ConnectedModel[] = DISCOVERABLE_MODELS[selectedProviderId] || [
+      {
+        id: `${selectedProviderId}-default`,
+        name: `${selectedProvObj.name} Default Model`,
+        providerId: selectedProviderId,
+        providerName: selectedProvObj.name,
+        status: 'Active',
+        capabilities: ['Code', 'Function Calling'],
+        contextWindow: '128,000 tokens',
+        maxOutputTokens: '4,096 tokens',
+        pricingPrompt: '$1.00 / 1M tokens',
+        pricingCompletion: '$2.00 / 1M tokens'
+      }
     ];
 
     setDiscoveredModels(discovered);
