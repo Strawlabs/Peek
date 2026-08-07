@@ -14,9 +14,9 @@ CREATE TABLE IF NOT EXISTS public.providers (
 
 -- users table
 CREATE TABLE IF NOT EXISTS public.users (
-    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id text PRIMARY KEY DEFAULT gen_random_uuid()::text,
     email text UNIQUE NOT NULL,
-    hashed_password text NOT NULL,
+    hashed_password text,
     created_at timestamp with time zone DEFAULT now()
 );
 
@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS public.users (
 CREATE TABLE IF NOT EXISTS public.organizations (
     id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
     name text NOT NULL,
-    owner_id uuid REFERENCES public.users(id),
+    owner_id text REFERENCES public.users(id),
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now()
 );
@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS public.organizations (
 
 -- profiles table
 CREATE TABLE IF NOT EXISTS public.profiles (
-    user_id uuid PRIMARY KEY REFERENCES public.users(id),
+    user_id text PRIMARY KEY REFERENCES public.users(id),
     display_name text,
     avatar_url text,
     created_at timestamp with time zone DEFAULT now()
@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS public.tasks (
 -- connections table
 CREATE TABLE IF NOT EXISTS public.connections (
     id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id uuid REFERENCES public.users(id),
+    user_id text REFERENCES public.users(id),
     type text,
     created_at timestamp with time zone DEFAULT now()
 );
@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS public.analytics (
 -- notifications table
 CREATE TABLE IF NOT EXISTS public.notifications (
     id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id uuid REFERENCES public.users(id),
+    user_id text REFERENCES public.users(id),
     message text NOT NULL,
     created_at timestamp with time zone DEFAULT now()
 );
