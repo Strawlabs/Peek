@@ -86,8 +86,8 @@ export const TokenBenefitScreen: React.FC = () => {
 
   const calculateResult = () => {
     const score = inputStructure + logicComplexity + errorTolerance + taskType;
-    let resultType: Assessment['resultType'] = 'AI Essential';
-    let potentialSavings = 0;
+    let resultType: Assessment['resultType'];
+    let potentialSavings: number;
     const costNum = parseFloat(currentCost) || 0;
 
     if (score <= 6) {

@@ -15,12 +15,15 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({ setScreen }) => 
     setTimeout(() => setToast(null), 3000);
   };
 
-  const filteredRequests = requests.filter(r => {
-    if (timeRange === 'all') return true;
-    const now = Date.now();
-    const daysInMs = (timeRange === '30d' ? 30 : 7) * 24 * 60 * 60 * 1000;
-    return (now - r.timestamp) <= daysInMs;
-  });
+  const [now] = React.useState(() => Date.now());
+
+  const filteredRequests = React.useMemo(() => {
+    return requests.filter(r => {
+      if (timeRange === 'all') return true;
+      const daysInMs = (timeRange === '30d' ? 30 : 7) * 24 * 60 * 60 * 1000;
+      return (now - r.timestamp) <= daysInMs;
+    });
+  }, [requests, timeRange, now]);
 
   const totalRequests = filteredRequests.length;
   const totalCost = filteredRequests.reduce((sum, r) => sum + r.cost, 0);

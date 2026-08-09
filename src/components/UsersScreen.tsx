@@ -58,7 +58,7 @@ export const UsersScreen: React.FC = () => {
         let msg = data?.error || error?.message || 'Failed to send invitation';
         if (error && 'context' in error && error.context) {
           try {
-            const errBody = await (error.context as any).json();
+            const errBody = await (error.context as Response).json();
             msg = errBody.error || errBody.message || msg;
           } catch (e) {
             console.warn('Failed to parse response body:', e);

@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import type { User as SupabaseAuthUser } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { generateDynamicRecommendations } from '../utils/aiRecommendationEngine';
 
@@ -362,7 +363,7 @@ interface StateContextType {
   ) => Promise<{ success: boolean; trace: string[]; cost: number; tokens: number; latency: number }>;
   runRecommendationScan: () => void;
   resetSystemState: () => Promise<void>;
-  authSession: any | null;
+  authSession: SupabaseAuthUser | null;
   signOut: () => Promise<void>;
   updatePassword: (password: string) => Promise<{ success: boolean; error: string | null }>;
 }
@@ -468,7 +469,7 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [authSession, setAuthSession] = useState<any | null>(null);
+  const [authSession, setAuthSession] = useState<SupabaseAuthUser | null>(null);
 
   const [channels, setChannels] = useState<ChannelConfig[]>(() => {
     if (typeof window !== 'undefined') {
@@ -856,39 +857,8 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
   }, []);
 
-  // ─── Auth State Listener ───────────────────────────────────────────────────
-  useEffect(() => {
-    // 1. Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setAuthSession(session?.user ?? null);
-      if (session?.user) {
-        handleStatusTransition(session.user);
-      }
-    });
-
-    // 2. Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setAuthSession(session?.user ?? null);
-      if (session?.user) {
-        handleStatusTransition(session.user);
-      }
-    });
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, [users]);
-
-  // Derive active user role — ammu2406sm@gmail.com and @peek.ai are ALWAYS Super Admin
-  const userEmail = authSession?.email?.toLowerCase() || '';
-  const loggedInUserRecord = users.find(u => u.email.toLowerCase() === userEmail);
-  const isSuperAdminEmail = userEmail.includes('ammu') || userEmail.endsWith('@peek.ai') || userEmail === '';
-  const currentUserRole: 'Super Admin' | 'Governance Manager' | 'Viewer' = isSuperAdminEmail
-    ? 'Super Admin'
-    : (loggedInUserRecord?.role as any) || 'Super Admin';
-
   // Helper to transition user status and enforce Super Admin for admin emails
-  const handleStatusTransition = async (authUser: any) => {
+  const handleStatusTransition = useCallback(async (authUser: SupabaseAuthUser) => {
     const email = authUser.email?.toLowerCase();
     if (!email) return;
 
@@ -927,14 +897,45 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         id: authUser.id,
         org_id: targetOrgId,
         name: cleanName,
-        email: authUser.email,
+        email: authUser.email as string,
         role: assignedRole,
         status: 'Active' as const,
       };
       setUsers(prev => [...prev, newUser]);
       await supabase.from('users').upsert(newUser, { onConflict: 'email' });
     }
-  };
+  }, [users, currentOrgId]);
+
+  // ─── Auth State Listener ───────────────────────────────────────────────────
+  useEffect(() => {
+    // 1. Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setAuthSession(session?.user ?? null);
+      if (session?.user) {
+        handleStatusTransition(session.user);
+      }
+    });
+
+    // 2. Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      setAuthSession(session?.user ?? null);
+      if (session?.user) {
+        handleStatusTransition(session.user);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [handleStatusTransition]);
+
+  // Derive active user role — ammu2406sm@gmail.com and @peek.ai are ALWAYS Super Admin
+  const userEmail = authSession?.email?.toLowerCase() || '';
+  const loggedInUserRecord = users.find(u => u.email.toLowerCase() === userEmail);
+  const isSuperAdminEmail = userEmail.includes('ammu') || userEmail.endsWith('@peek.ai') || userEmail === '';
+  const currentUserRole: 'Super Admin' | 'Governance Manager' | 'Viewer' = isSuperAdminEmail
+    ? 'Super Admin'
+    : (loggedInUserRecord?.role as 'Super Admin' | 'Governance Manager' | 'Viewer') || 'Super Admin';
 
 
   const signOut = async () => {

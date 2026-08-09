@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import type { EmailOtpType } from '@supabase/supabase-js';
 import { StateProvider } from './context/StateContext';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
@@ -146,7 +147,7 @@ function AppShell() {
           console.log(`[Peek] Verifying direct login token...`);
           const { error } = await supabase.auth.verifyOtp({
             token_hash: tokenHash,
-            type: type as any,
+            type: type as EmailOtpType,
           });
 
           if (error) {

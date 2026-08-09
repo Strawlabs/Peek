@@ -731,11 +731,13 @@ export const ReportsScreen: React.FC = () => {
       if (error || data?.error) {
         let msg = data?.error || error?.message || 'Failed to send email';
         // Try to parse richer error body from Supabase FunctionsHttpError
-        if (error && 'context' in error && (error as any).context) {
+        if (error && 'context' in error && (error as { context?: Response }).context) {
           try {
-            const errBody = await (error as any).context.json();
+            const errBody = await (error as { context: Response }).context.json();
             msg = errBody.error || errBody.details || msg;
-          } catch (_) {}
+          } catch {
+            /* ignore parse error */
+          }
         }
         showToast(`❌ Email failed: ${msg}`, 'error');
         return;
@@ -1033,7 +1035,7 @@ export const ReportsScreen: React.FC = () => {
                   </label>
                   <select
                     value={newFrequency}
-                    onChange={(e) => setNewFrequency(e.target.value as any)}
+                    onChange={(e) => setNewFrequency(e.target.value as ReportSchedule['frequency'])}
                     className="w-full bg-surface-container border border-outline-variant rounded-lg px-3 py-2 text-body-sm text-on-surface focus:outline-none focus:border-primary cursor-pointer"
                   >
                     <option value="Daily">Daily</option>
