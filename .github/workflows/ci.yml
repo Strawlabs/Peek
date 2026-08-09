@@ -149,11 +149,11 @@ jobs:
             echo "❌ .env is NOT in .gitignore — secrets may leak!" && exit 1
           fi
 
-      - name: Verify no .env files are tracked
+      - name: Verify no real .env secret files are tracked
         run: |
-          TRACKED=$(git ls-files '*.env' '.env.*' '*.env.local' 2>/dev/null || true)
+          TRACKED=$(git ls-files '*.env' '.env.*' '*.env.local' | grep -v '\.env\.example' || true)
           if [ -n "$TRACKED" ]; then
-            echo "❌ Environment files are tracked in git: $TRACKED"
+            echo "❌ Environment secret files are tracked in git: $TRACKED"
             exit 1
           fi
-          echo "✅ No .env files tracked in git"
+          echo "✅ No real .env secret files tracked in git"

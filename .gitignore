@@ -55,8 +55,8 @@ TASK_PLAN.md
 .antigravity/
 skills-lock.json
 
-# ─── Scratch / temporary files ───
-test
+/test
+!src/test/
 *.tmp
 *.temp
 
