@@ -4,85 +4,103 @@
 -- Begin schema (auto-generated)
 CREATE SCHEMA IF NOT EXISTS public;
 
+-- organizations table
+CREATE TABLE IF NOT EXISTS public.organizations (
+    id text PRIMARY KEY,
+    name text NOT NULL,
+    created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
 -- providers table
 CREATE TABLE IF NOT EXISTS public.providers (
-    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id text PRIMARY KEY,
     name text NOT NULL,
+    status text NOT NULL CHECK (status IN ('connected', 'disconnected')),
+    api_key text,
+    models text[] NOT NULL DEFAULT '{}'::text[],
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now()
+);
+
+-- api_keys table
+CREATE TABLE IF NOT EXISTS public.api_keys (
+    id text PRIMARY KEY,
+    team text NOT NULL,
+    name text NOT NULL,
+    key_prefix text NOT NULL,
+    key_hash text NOT NULL,
+    active boolean NOT NULL DEFAULT true,
+    created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- requests table
+CREATE TABLE IF NOT EXISTS public.requests (
+    id text PRIMARY KEY,
+    provider text NOT NULL,
+    model text NOT NULL,
+    tokens_in integer NOT NULL,
+    tokens_out integer NOT NULL,
+    cost numeric(10, 6) NOT NULL,
+    latency numeric(5, 2) NOT NULL,
+    timestamp bigint NOT NULL,
+    team text NOT NULL,
+    project text NOT NULL,
+    department text NOT NULL,
+    workflow text NOT NULL,
+    customer text NOT NULL,
+    prompt text NOT NULL,
+    response text NOT NULL,
+    status text NOT NULL
+);
+
+-- policies table
+CREATE TABLE IF NOT EXISTS public.policies (
+    id text PRIMARY KEY,
+    name text NOT NULL,
+    description text NOT NULL,
+    type text NOT NULL,
+    active boolean NOT NULL DEFAULT true,
+    action text NOT NULL CHECK (action IN ('block', 'flag'))
+);
+
+-- budgets table
+CREATE TABLE IF NOT EXISTS public.budgets (
+    team text PRIMARY KEY,
+    limit_amount numeric NOT NULL DEFAULT 0,
+    spent numeric NOT NULL DEFAULT 0
+);
+
+-- recommendations table
+CREATE TABLE IF NOT EXISTS public.recommendations (
+    id text PRIMARY KEY,
+    title text NOT NULL,
+    category text NOT NULL,
+    suggestion text NOT NULL,
+    savings numeric NOT NULL,
+    confidence numeric NOT NULL,
+    status text NOT NULL CHECK (status IN ('active', 'applied', 'dismissed')),
+    evidence text NOT NULL
+);
+
+-- outcomes table
+CREATE TABLE IF NOT EXISTS public.outcomes (
+    id text PRIMARY KEY,
+    workflow text NOT NULL,
+    department text NOT NULL,
+    metric_name text NOT NULL,
+    volume integer NOT NULL,
+    cost_per_outcome numeric(10, 4) NOT NULL,
+    roi_score text NOT NULL CHECK (roi_score IN ('High', 'Medium', 'Low')),
+    necessity text NOT NULL CHECK (necessity IN ('AI Essential', 'AI Recommended', 'Hybrid', 'Rule-Based Preferred'))
 );
 
 -- users table
 CREATE TABLE IF NOT EXISTS public.users (
-    id text PRIMARY KEY DEFAULT gen_random_uuid()::text,
-    email text UNIQUE NOT NULL,
-    hashed_password text,
-    created_at timestamp with time zone DEFAULT now()
-);
-
--- organizations table
-CREATE TABLE IF NOT EXISTS public.organizations (
-    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id text PRIMARY KEY,
     name text NOT NULL,
-    owner_id text REFERENCES public.users(id),
-    created_at timestamp with time zone DEFAULT now(),
-    updated_at timestamp with time zone DEFAULT now()
-);
-
-
--- profiles table
-CREATE TABLE IF NOT EXISTS public.profiles (
-    user_id text PRIMARY KEY REFERENCES public.users(id),
-    display_name text,
-    avatar_url text,
-    created_at timestamp with time zone DEFAULT now()
-);
-
--- projects table
-CREATE TABLE IF NOT EXISTS public.projects (
-    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-    org_id uuid REFERENCES public.organizations(id),
-    title text NOT NULL,
-    created_at timestamp with time zone DEFAULT now()
-);
-
--- tasks table
-CREATE TABLE IF NOT EXISTS public.tasks (
-    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-    project_id uuid REFERENCES public.projects(id),
-    title text NOT NULL,
-    status text,
-    created_at timestamp with time zone DEFAULT now()
-);
-
--- connections table
-CREATE TABLE IF NOT EXISTS public.connections (
-    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id text REFERENCES public.users(id),
-    type text,
-    created_at timestamp with time zone DEFAULT now()
-);
-
--- analytics table
-CREATE TABLE IF NOT EXISTS public.analytics (
-    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-    event text NOT NULL,
-    payload jsonb,
-    created_at timestamp with time zone DEFAULT now()
-);
-
--- notifications table
-CREATE TABLE IF NOT EXISTS public.notifications (
-    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id text REFERENCES public.users(id),
-    message text NOT NULL,
-    created_at timestamp with time zone DEFAULT now()
-);
-
--- settings table
-CREATE TABLE IF NOT EXISTS public.settings (
-    key text PRIMARY KEY,
-    value text
+    email text NOT NULL,
+    role text NOT NULL,
+    status text NOT NULL CHECK (status IN ('Active', 'Pending'))
 );
 
 -- Enable RLS on all tables
@@ -94,21 +112,18 @@ BEGIN
     END LOOP;
 END $$;
 
--- Example policies (adjust as needed)
-CREATE POLICY "allow_authenticated" ON public.providers FOR ALL USING (auth.uid() IS NOT NULL);
+-- Example default policies
 CREATE POLICY "allow_authenticated" ON public.organizations FOR ALL USING (auth.uid() IS NOT NULL);
+CREATE POLICY "allow_authenticated" ON public.providers FOR ALL USING (auth.uid() IS NOT NULL);
+CREATE POLICY "allow_authenticated" ON public.api_keys FOR ALL USING (auth.uid() IS NOT NULL);
+CREATE POLICY "allow_authenticated" ON public.requests FOR ALL USING (auth.uid() IS NOT NULL);
+CREATE POLICY "allow_authenticated" ON public.policies FOR ALL USING (auth.uid() IS NOT NULL);
+CREATE POLICY "allow_authenticated" ON public.budgets FOR ALL USING (auth.uid() IS NOT NULL);
+CREATE POLICY "allow_authenticated" ON public.recommendations FOR ALL USING (auth.uid() IS NOT NULL);
+CREATE POLICY "allow_authenticated" ON public.outcomes FOR ALL USING (auth.uid() IS NOT NULL);
 CREATE POLICY "allow_authenticated" ON public.users FOR ALL USING (auth.uid() IS NOT NULL);
-CREATE POLICY "allow_authenticated" ON public.profiles FOR ALL USING (auth.uid() IS NOT NULL);
-CREATE POLICY "allow_authenticated" ON public.projects FOR ALL USING (auth.uid() IS NOT NULL);
-CREATE POLICY "allow_authenticated" ON public.tasks FOR ALL USING (auth.uid() IS NOT NULL);
-CREATE POLICY "allow_authenticated" ON public.connections FOR ALL USING (auth.uid() IS NOT NULL);
-CREATE POLICY "allow_authenticated" ON public.analytics FOR ALL USING (auth.uid() IS NOT NULL);
-CREATE POLICY "allow_authenticated" ON public.notifications FOR ALL USING (auth.uid() IS NOT NULL);
-CREATE POLICY "allow_authenticated" ON public.settings FOR ALL USING (auth.uid() IS NOT NULL);
 
 -- Grant Data API access to anon and authenticated roles
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO anon, authenticated;
 
 -- End of migration
-
--- Note: This is a simplified schema based on code expectations.
