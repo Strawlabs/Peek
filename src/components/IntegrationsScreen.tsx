@@ -437,7 +437,7 @@ export const IntegrationsScreen: React.FC = () => {
   const [keyName, setKeyName] = useState('');
   const [generatedKey, setGeneratedKey] = useState<string | null>(null);
   const [copySuccess, setCopySuccess] = useState(false);
-  const [codeLang, setCodeLang] = useState<'curl' | 'python' | 'node'>('python');
+  const [codeLang, setCodeLang] = useState<'curl' | 'python' | 'node' | 'cursor'>('python');
 
   const handleGenerateKey = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -745,12 +745,12 @@ export const IntegrationsScreen: React.FC = () => {
                   Point standard client libraries to Peek AI Gateway using Virtual Keys.
                 </p>
               </div>
-              <div className="flex bg-surface-container p-1 rounded-lg border border-outline-variant">
+              <div className="flex flex-wrap bg-surface-container p-1 rounded-lg border border-outline-variant gap-1">
                 <button
                   onClick={() => setCodeLang('python')}
                   className={`px-3 py-1 text-xs font-bold rounded ${codeLang === 'python' ? 'bg-primary text-on-primary' : 'text-on-surface-variant'}`}
                 >
-                  Python (OpenAI SDK)
+                  Python (OpenAI / LangChain)
                 </button>
                 <button
                   onClick={() => setCodeLang('node')}
@@ -759,10 +759,16 @@ export const IntegrationsScreen: React.FC = () => {
                   Node.js (TypeScript)
                 </button>
                 <button
+                  onClick={() => setCodeLang('cursor')}
+                  className={`px-3 py-1 text-xs font-bold rounded ${codeLang === 'cursor' ? 'bg-primary text-on-primary' : 'text-on-surface-variant'}`}
+                >
+                  Cursor & VS Code AI
+                </button>
+                <button
                   onClick={() => setCodeLang('curl')}
                   className={`px-3 py-1 text-xs font-bold rounded ${codeLang === 'curl' ? 'bg-primary text-on-primary' : 'text-on-surface-variant'}`}
                 >
-                  cURL REST API
+                  cURL & Shell Env
                 </button>
               </div>
             </div>
@@ -771,18 +777,19 @@ export const IntegrationsScreen: React.FC = () => {
               {codeLang === 'python' && (
                 <pre>{`import openai
 
-# Route standard OpenAI SDK through Peek Gateway
+# Route standard OpenAI SDK through Peek Gateway to calculate AI spend automatically
 client = openai.OpenAI(
     base_url="${window.location.origin.replace('5173', '54321')}/functions/v1/v1-chat-completions",
-    api_key="${generatedKey || 'pk_live_eng_92a81f3d'}"  # Virtual API Key
+    api_key="${generatedKey || 'pk_live_eng_92a81f3d'}"  # Peek Virtual Key
 )
 
 response = client.chat.completions.create(
     model="gpt-4o",
-    messages=[{"role": "user", "content": "Analyze quarterly report"}],
+    messages=[{"role": "user", "content": "Refactor auth middleware and calculate spend"}],
     extra_headers={
-        "X-Peek-Workflow": "Financial Analysis",
-        "X-Peek-Customer": "Acme Corp"
+        "X-Peek-Team": "Engineering",
+        "X-Peek-Workflow": "Local Dev Building",
+        "X-Peek-Customer": "aswini m (ammu2406sm@gmail.com)"
     }
 )
 
@@ -792,14 +799,20 @@ print(response.choices[0].message.content)`}</pre>
               {codeLang === 'node' && (
                 <pre>{`import OpenAI from 'openai';
 
+// Route Node.js app or CLI tool through Peek Gateway
 const openai = new OpenAI({
   baseURL: '${window.location.origin.replace('5173', '54321')}/functions/v1/v1-chat-completions',
-  apiKey: '${generatedKey || 'pk_live_eng_92a81f3d'}', // Virtual API Key
+  apiKey: '${generatedKey || 'pk_live_eng_92a81f3d'}', // Peek Virtual Key
+  defaultHeaders: {
+    'X-Peek-Team': 'Engineering',
+    'X-Peek-Workflow': 'Local Dev Building',
+    'X-Peek-Customer': 'aswini m (ammu2406sm@gmail.com)'
+  }
 });
 
 async function main() {
   const completion = await openai.chat.completions.create({
-    messages: [{ role: 'user', content: 'Generate code review' }],
+    messages: [{ role: 'user', content: 'Generate React component unit tests' }],
     model: 'gpt-4o',
   });
 
@@ -807,15 +820,36 @@ async function main() {
 }`}</pre>
               )}
 
+              {codeLang === 'cursor' && (
+                <pre>{`# Configure Cursor / VS Code AI Extension to calculate spend automatically:
+# 1. Open Cursor Settings -> Models -> OpenAI API Key & Override Base URL
+# 2. Set OpenAI Base URL:
+OPENAI_BASE_URL=${window.location.origin.replace('5173', '54321')}/functions/v1/v1-chat-completions
+
+# 3. Set OpenAI API Key:
+OPENAI_API_KEY=${generatedKey || 'pk_live_eng_92a81f3d'}
+
+# 4. In your project root, add .env:
+OPENAI_BASE_URL=${window.location.origin.replace('5173', '54321')}/functions/v1/v1-chat-completions
+OPENAI_API_KEY=${generatedKey || 'pk_live_eng_92a81f3d'}
+PEEK_CUSTOMER=aswini m (ammu2406sm@gmail.com)`}</pre>
+              )}
+
               {codeLang === 'curl' && (
-                <pre>{`curl -X POST "${window.location.origin.replace('5173', '54321')}/functions/v1/v1-chat-completions" \\
-  -H "Authorization: Bearer ${generatedKey || 'pk_live_eng_92a81f3d'}" \\
+                <pre>{`# Export environment variables for local terminal scripts:
+export OPENAI_BASE_URL="${window.location.origin.replace('5173', '54321')}/functions/v1/v1-chat-completions"
+export OPENAI_API_KEY="${generatedKey || 'pk_live_eng_92a81f3d'}"
+
+# Test cURL request through Peek Proxy:
+curl -X POST "$OPENAI_BASE_URL" \\
+  -H "Authorization: Bearer $OPENAI_API_KEY" \\
   -H "X-Peek-Team: Engineering" \\
-  -H "X-Peek-Workflow: CI/CD Review" \\
+  -H "X-Peek-Workflow: Local Terminal Task" \\
+  -H "X-Peek-Customer: aswini m (ammu2406sm@gmail.com)" \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "gpt-4o",
-    "messages": [{"role": "user", "content": "Check PR security"}]
+    "messages": [{"role": "user", "content": "Analyze build script error"}]
   }'`}</pre>
               )}
             </div>

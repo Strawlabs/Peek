@@ -45,10 +45,15 @@ export const GovernanceCenterScreen: React.FC = () => {
 
   // Filter requests for the Audit Log
   const filteredLogs = requests.filter((req) => {
-    // 1. Log Type Filter
+    // 1. Log Type & Provider Filter
     if (logTypeFilter === 'violations') {
-      // Anything that is not Optimal
       if (req.status === 'Optimal') return false;
+    } else if (logTypeFilter === 'gemini') {
+      if (req.provider !== 'gemini') return false;
+    } else if (logTypeFilter === 'openai') {
+      if (req.provider !== 'openai') return false;
+    } else if (logTypeFilter === 'local') {
+      if (req.provider !== 'local') return false;
     } else if (logTypeFilter === 'pii') {
       if (!req.status.includes('PII')) return false;
     } else if (logTypeFilter === 'model') {
@@ -62,7 +67,7 @@ export const GovernanceCenterScreen: React.FC = () => {
     // 2. Search Query
     if (searchQuery.trim() !== '') {
       const query = searchQuery.toLowerCase();
-      const matchText = `${req.team} ${req.project} ${req.workflow} ${req.prompt} ${req.response} ${req.status} ${req.model} ${req.provider}`.toLowerCase();
+      const matchText = `${req.team} ${req.customer} ${req.project} ${req.workflow} ${req.prompt} ${req.response} ${req.status} ${req.model} ${req.provider}`.toLowerCase();
       if (!matchText.includes(query)) return false;
     }
 
@@ -277,8 +282,11 @@ export const GovernanceCenterScreen: React.FC = () => {
                 onChange={(e) => setLogTypeFilter(e.target.value)}
                 className="bg-surface-container-low border border-outline-variant rounded-lg px-3 py-1.5 text-body-sm text-on-surface focus:outline-none"
               >
-                <option value="violations">All Violations / Warnings</option>
                 <option value="all">All Gateway Activity</option>
+                <option value="gemini">Google Gemini Logs Only</option>
+                <option value="openai">ChatGPT (OpenAI) Logs Only</option>
+                <option value="local">Local Gemini / Ollama Logs Only</option>
+                <option value="violations">All Violations / Warnings</option>
                 <option value="pii">PII Leaks Only</option>
                 <option value="model">Model Restrictions Only</option>
                 <option value="blocked">Blocked Requests Only</option>
