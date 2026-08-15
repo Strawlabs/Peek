@@ -727,7 +727,7 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         dbKeys.forEach(k => keyMap.set(k.id, k));
         cachedKeys.forEach(k => { if (!keyMap.has(k.id)) keyMap.set(k.id, k); });
         const mergedKeys = Array.from(keyMap.values()).sort(
-          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          (a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime()
         );
         setApiKeys(mergedKeys);
         saveStoredVirtualKeys(mergedKeys);
