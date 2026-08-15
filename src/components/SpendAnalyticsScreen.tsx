@@ -217,7 +217,7 @@ export const SpendAnalyticsScreen: React.FC = () => {
       {/* KPI Cards */}
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Total Spend', value: `$${totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, delta: costDelta, invertColor: true, icon: 'payments' },
+          { label: 'Total Spend', value: `$${totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`, delta: costDelta, invertColor: true, icon: 'payments' },
           { label: 'Total Requests', value: totalRequests.toLocaleString(), delta: requestsDelta, invertColor: false, icon: 'api' },
           { label: 'Blocked / Flagged', value: blockedCount.toLocaleString(), delta: blockedDelta, invertColor: true, icon: 'block' },
           { label: 'Avg Cost / Request', value: `$${avgCostPerReq.toFixed(5)}`, delta: efficiencyDelta, invertColor: false, icon: 'savings' },
@@ -245,7 +245,7 @@ export const SpendAnalyticsScreen: React.FC = () => {
             </div>
             <div className="text-right">
               <span className="font-display-lg text-[28px] text-primary font-bold">
-                ${totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                ${totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
               </span>
               <div className="text-on-surface-variant text-xs mt-1">{dateRangeLabel}</div>
             </div>
@@ -308,7 +308,7 @@ export const SpendAnalyticsScreen: React.FC = () => {
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
               <span className="text-[10px] text-on-surface-variant uppercase tracking-wider">Total</span>
-              <span className="text-lg font-bold text-on-surface">${totalCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+              <span className="text-lg font-bold text-on-surface">${totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</span>
             </div>
           </div>
           <div className="space-y-2">
@@ -320,7 +320,7 @@ export const SpendAnalyticsScreen: React.FC = () => {
                   <span className="text-body-sm text-on-surface capitalize">{p}</span>
                 </div>
                 <div className="text-right">
-                  <span className="font-mono text-xs text-on-surface">${cost.toFixed(2)}</span>
+                  <span className="font-mono text-xs text-on-surface">${cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</span>
                   <span className="text-[10px] text-on-surface-variant ml-1">({((cost / totalCost) * 100).toFixed(0)}%)</span>
                 </div>
               </div>
@@ -344,7 +344,7 @@ export const SpendAnalyticsScreen: React.FC = () => {
                 <div className="flex justify-between text-body-sm mb-1.5">
                   <span className="text-on-surface font-medium">{team}</span>
                   <span className={`font-mono text-xs ${pct > 90 ? 'text-rose-400' : pct > 70 ? 'text-amber-400' : 'text-emerald-400'}`}>
-                    ${spent.toFixed(2)} / ${limit.toLocaleString()} ({pct.toFixed(1)}%)
+                    ${spent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })} / ${limit.toLocaleString()} ({pct.toFixed(1)}%)
                   </span>
                 </div>
                 <div className="h-2.5 bg-surface-variant rounded-full overflow-hidden">
@@ -373,7 +373,7 @@ export const SpendAnalyticsScreen: React.FC = () => {
                   <div className="flex justify-between items-center mb-1">
                     <span className="text-body-sm text-on-surface font-mono">{key}</span>
                     <div className="text-right">
-                      <span className="text-xs font-bold text-primary">${cost.toFixed(2)}</span>
+                      <span className="text-xs font-bold text-primary">${cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</span>
                       <span className="text-[10px] text-on-surface-variant ml-2">{count} req · {(tokens / 1000).toFixed(0)}k tok</span>
                     </div>
                   </div>
@@ -399,12 +399,12 @@ export const SpendAnalyticsScreen: React.FC = () => {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="p-4 rounded-xl bg-surface-container-high border border-outline-variant">
             <p className="text-label-sm text-on-surface-variant uppercase tracking-wider mb-2">Projected This Month</p>
-            <span className="text-headline-sm font-bold text-on-surface">${projectedMonthly.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            <span className="text-headline-sm font-bold text-on-surface">${projectedMonthly.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</span>
             <p className="text-xs text-on-surface-variant mt-1">Based on current daily rate</p>
           </div>
           <div className="p-4 rounded-xl bg-surface-container-high border border-outline-variant">
             <p className="text-label-sm text-on-surface-variant uppercase tracking-wider mb-2">Next 7 Days Est.</p>
-            <span className="text-headline-sm font-bold text-on-surface">${projectedNext7.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            <span className="text-headline-sm font-bold text-on-surface">${projectedNext7.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</span>
             <p className="text-xs text-on-surface-variant mt-1">Linear extrapolation</p>
           </div>
           <div className="p-4 rounded-xl bg-surface-container-high border border-outline-variant">

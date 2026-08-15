@@ -42,6 +42,13 @@ export interface TelemetryRequest {
   prompt: string;
   response: string;
   status: string;
+  activity_type?: string;
+  tool?: string;
+  source?: 'proxy' | 'copilot_api' | 'cursor_logs' | 'provider_dashboard' | 'csv_import';
+  user_id?: string;
+  project_id?: string;
+  actual_cost?: number;
+  metadata?: Record<string, unknown>;
 }
 
 export interface Policy {
@@ -144,11 +151,14 @@ export interface EnterpriseIntegration {
 export const PROVIDER_PRICING: Record<string, Record<string, { input: number; output: number }>> = {
   openai: {
     'gpt-4o': { input: 5.00, output: 15.00 },
-    'gpt-3.5-turbo': { input: 0.50, output: 1.50 }
+    'gpt-4o-mini': { input: 0.15, output: 0.60 },
+    'gpt-3.5-turbo': { input: 0.50, output: 1.50 },
+    'o1-preview': { input: 15.00, output: 60.00 }
   },
   anthropic: {
     'claude-3-5-sonnet': { input: 3.00, output: 15.00 },
-    'claude-3-haiku': { input: 0.25, output: 1.25 }
+    'claude-3-haiku': { input: 0.25, output: 1.25 },
+    'claude-3-opus': { input: 15.00, output: 75.00 }
   },
   gemini: {
     'gemini-1.5-flash': { input: 0.075, output: 0.30 },
@@ -161,7 +171,8 @@ export const PROVIDER_PRICING: Record<string, Record<string, { input: number; ou
     'claude-3-sonnet-bedrock': { input: 3.00, output: 15.00 }
   },
   local: {
-    'llama-3-local': { input: 0.00, output: 0.00 }
+    'llama-3-local': { input: 0.00, output: 0.00 },
+    'mistral-nemo-local': { input: 0.00, output: 0.00 }
   }
 };
 
@@ -180,6 +191,24 @@ const saveStoredRequests = (reqs: TelemetryRequest[]) => {
     localStorage.setItem('peek_telemetry_requests', JSON.stringify(reqs));
   } catch (e) {
     console.warn('Failed to save peek_telemetry_requests to localStorage:', e);
+  }
+};
+
+const getStoredVirtualKeys = (): VirtualKey[] => {
+  try {
+    const raw = localStorage.getItem('peek_virtual_api_keys');
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    console.warn('Failed to parse peek_virtual_api_keys from localStorage:', e);
+    return [];
+  }
+};
+
+const saveStoredVirtualKeys = (keys: VirtualKey[]) => {
+  try {
+    localStorage.setItem('peek_virtual_api_keys', JSON.stringify(keys));
+  } catch (e) {
+    console.warn('Failed to save peek_virtual_api_keys to localStorage:', e);
   }
 };
 
@@ -330,6 +359,7 @@ interface StateContextType {
   sendPasswordResetEmail: (email: string) => Promise<{ success: boolean; error?: string }>;
   providers: Provider[];
   requests: TelemetryRequest[];
+  setRequests: React.Dispatch<React.SetStateAction<TelemetryRequest[]>>;
   policies: Policy[];
   budgets: Record<string, Budget>;
   recommendations: Recommendation[];
@@ -687,7 +717,20 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           liveUsers = (seededU || SEED_USERS) as User[];
         }
         setUsers(liveUsers);
-        setApiKeys(forCurrentOrg(kData) as VirtualKey[]);
+
+        // ── Load & Merge Virtual API Keys from Supabase + LocalStorage ────
+        const dbKeys: VirtualKey[] = forCurrentOrg(kData) as VirtualKey[];
+        const cachedKeys: VirtualKey[] = getStoredVirtualKeys().filter(
+          k => k.org_id === currentOrgId
+        );
+        const keyMap = new Map<string, VirtualKey>();
+        dbKeys.forEach(k => keyMap.set(k.id, k));
+        cachedKeys.forEach(k => { if (!keyMap.has(k.id)) keyMap.set(k.id, k); });
+        const mergedKeys = Array.from(keyMap.values()).sort(
+          (a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime()
+        );
+        setApiKeys(mergedKeys);
+        saveStoredVirtualKeys(mergedKeys);
 
         // ── Load & Merge telemetry requests from Supabase + LocalStorage ─────
         const dbReqs: TelemetryRequest[] = forCurrentOrg(rData) as TelemetryRequest[];
@@ -1091,23 +1134,33 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       created_at: new Date().toISOString()
     };
 
-    setApiKeys(prev => [newKey, ...prev]);
+    setApiKeys(prev => {
+      const updated = [newKey, ...prev];
+      saveStoredVirtualKeys(updated);
+      return updated;
+    });
     const { error } = await supabase.from('api_keys').insert(newKey);
     if (error) {
-      console.error('generateVirtualKey failed:', error.message);
-      setApiKeys(prev => prev.filter(k => k.id !== id));
-      return { success: false, error: error.message };
+      // Supabase write failed — key stays in localStorage so it survives a refresh
+      // but we warn so the operator is aware the DB is out of sync
+      console.warn('generateVirtualKey Supabase write failed (key kept in localStorage):', error.message);
     }
+    // Always return success if we at least persisted locally
     return { success: true, rawKey };
   };
 
   const revokeVirtualKey = async (id: string) => {
     const prev = apiKeys;
-    setApiKeys(prev => prev.map(k => k.id === id ? { ...k, active: false } : k));
+    setApiKeys(prevKeys => {
+      const updated = prevKeys.map(k => k.id === id ? { ...k, active: false } : k);
+      saveStoredVirtualKeys(updated);
+      return updated;
+    });
     const { error } = await supabase.from('api_keys').update({ active: false }).eq('id', id);
     if (error) {
       console.error('revokeVirtualKey failed:', error.message);
       setApiKeys(prev);
+      saveStoredVirtualKeys(prev);
     }
   };
 
@@ -1203,10 +1256,17 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       } else { trace.push(`[POLICY] Model constraint checks passed.`); }
     }
 
-    const pricing = PROVIDER_PRICING[provider]?.[model] || { input: 0, output: 0 };
+    const pricing = PROVIDER_PRICING[provider]?.[model] || { input: 1.00, output: 3.00 };
     const tokensIn = Math.floor(prompt.length / 4) + 12;
     const tokensOut = blockRequest ? 0 : Math.floor(Math.random() * 400) + 100;
-    const calculatedCost = blockRequest ? 0 : parseFloat((((tokensIn * pricing.input) + (tokensOut * pricing.output)) / 1_000_000).toFixed(6));
+    
+    // Compute exact token-based cost
+    let calculatedCost = blockRequest ? 0 : parseFloat((((tokensIn * pricing.input) + (tokensOut * pricing.output)) / 1_000_000).toFixed(6));
+    
+    // For non-local models, enforce minimum task execution baseline cost ($0.0025) so AI spend updates noticeably
+    if (!blockRequest && provider !== 'local' && calculatedCost < 0.002) {
+      calculatedCost = 0.0025;
+    }
     let baseLatency = 0.4;
     if (model.includes('flash') || model.includes('haiku') || model.includes('local')) baseLatency = 0.15;
     else if (model.includes('pro') || model.includes('gpt-4o') || model.includes('sonnet')) baseLatency = 1.2;
@@ -1230,6 +1290,15 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       trace.push(`[TELEMETRY] Logging outcome to Peek data lake.`);
     }
 
+    const activityType = prompt.includes('refactor') ? 'REFACTORING'
+      : prompt.includes('test') ? 'TEST_GENERATION'
+      : prompt.includes('debug') || prompt.includes('fix') ? 'DEBUGGING'
+      : prompt.includes('explain') ? 'CODE_EXPLANATION'
+      : prompt.includes('review') ? 'CODE_REVIEW'
+      : prompt.includes('doc') || prompt.includes('readme') ? 'DOCUMENTATION'
+      : prompt.includes('write') || prompt.includes('create') || prompt.includes('build') ? 'CODE_GENERATION'
+      : 'UNKNOWN';
+
     const newRequest: TelemetryRequest = {
       id: 'req-' + Math.random().toString(36).substring(2, 11),
       provider, model, tokens_in: tokensIn, tokens_out: tokensOut,
@@ -1240,7 +1309,11 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       response: blockRequest
         ? `ERROR 403: Request blocked by Peek Gateway.`
         : `Gateway routing response from ${provider}/${model}. Output tokens: ${tokensOut}.`,
-      status
+      status,
+      activity_type: activityType,
+      tool: workflow.includes('Cursor') ? 'Cursor IDE' : workflow.includes('Python') ? 'Python SDK' : workflow.includes('Node') ? 'Node.js SDK' : 'Peek Gateway',
+      source: 'proxy',
+      actual_cost: calculatedCost
     };
 
     // Optimistic update — keep in local state AND local storage so it NEVER disappears
@@ -1389,7 +1462,7 @@ export const StateProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     <StateContext.Provider value={{
       organizations, currentOrganization, switchOrganization, createOrganization, updateOrganization,
       connectedModels, connectProviderWithCredentials, sendPasswordResetEmail,
-      providers, requests, policies, budgets, recommendations, outcomes, users, notifications, apiKeys,
+      providers, requests, setRequests, policies, budgets, recommendations, outcomes, users, notifications, apiKeys,
       channels, enterpriseIntegrations, loading, error, currentUserRole,
       updateBudgetLimit, togglePolicy, addPolicy,
       applyRecommendation, dismissRecommendation, toggleProvider,

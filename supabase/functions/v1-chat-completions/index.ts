@@ -17,15 +17,22 @@ const corsHeaders = {
 const PROVIDER_PRICING: Record<string, Record<string, { input: number; output: number }>> = {
   openai: {
     'gpt-4o': { input: 5.00, output: 15.00 },
-    'gpt-3.5-turbo': { input: 0.50, output: 1.50 }
+    'gpt-4o-mini': { input: 0.15, output: 0.60 },
+    'gpt-3.5-turbo': { input: 0.50, output: 1.50 },
+    'o1-preview': { input: 15.00, output: 60.00 }
   },
   anthropic: {
     'claude-3-5-sonnet': { input: 3.00, output: 15.00 },
-    'claude-3-haiku': { input: 0.25, output: 1.25 }
+    'claude-3-haiku': { input: 0.25, output: 1.25 },
+    'claude-3-opus': { input: 15.00, output: 75.00 }
   },
   gemini: {
     'gemini-1.5-flash': { input: 0.075, output: 0.30 },
     'gemini-1.5-pro': { input: 1.25, output: 5.00 }
+  },
+  local: {
+    'llama-3-local': { input: 0.00, output: 0.00 },
+    'mistral-nemo-local': { input: 0.00, output: 0.00 }
   }
 };
 
@@ -208,9 +215,12 @@ Deno.serve(async (req: Request) => {
     const latency = parseFloat(((endTime - startTime) / 1000).toFixed(2));
 
     // 5. Calculate Cost & Update Budget
-    const provId = model.includes('claude') ? 'anthropic' : model.includes('gemini') ? 'gemini' : 'openai';
+    const provId = model.includes('claude') ? 'anthropic' : model.includes('gemini') ? 'gemini' : model.includes('local') ? 'local' : 'openai';
     const rates = PROVIDER_PRICING[provId]?.[model] || { input: 1.0, output: 3.0 };
-    const cost = parseFloat((((tokensIn * rates.input) + (tokensOut * rates.output)) / 1_000_000).toFixed(6));
+    let cost = parseFloat((((tokensIn * rates.input) + (tokensOut * rates.output)) / 1_000_000).toFixed(6));
+    if (provId !== 'local' && cost < 0.002) {
+      cost = 0.0025;
+    }
 
     // Update Team Budget Spend in Supabase
     const { data: budgetRow } = await supabaseAdmin

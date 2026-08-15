@@ -111,7 +111,7 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({ setScreen }) => 
           <div>
             <span className="text-[10px] font-bold text-outline uppercase tracking-wider">TOTAL SPEND ({timeRange})</span>
             <h3 className="text-headline-lg text-primary font-bold mt-1">
-              ${totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              ${totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
             </h3>
           </div>
           <span onClick={() => setScreen('spend')} className="text-xs text-primary font-bold hover:underline cursor-pointer flex items-center gap-1">
@@ -165,8 +165,8 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({ setScreen }) => 
               <thead>
                 <tr className="border-b border-outline-variant text-[11px] text-outline font-bold uppercase">
                   <th className="py-2">Time</th>
-                  <th className="py-2">Team</th>
-                  <th className="py-2">Workflow</th>
+                  <th className="py-2">Account / User</th>
+                  <th className="py-2">Team & Workflow</th>
                   <th className="py-2">Model</th>
                   <th className="py-2 text-right">Cost</th>
                   <th className="py-2">Status</th>
@@ -178,8 +178,11 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({ setScreen }) => 
                   return (
                     <tr key={r.id} className="hover:bg-surface-variant/20 transition-colors">
                       <td className="py-3 font-mono">{dateStr}</td>
-                      <td className="py-3">{r.team}</td>
-                      <td className="py-3">{r.workflow}</td>
+                      <td className="py-3 font-bold text-xs text-on-surface">{r.customer || 'Default User'}</td>
+                      <td className="py-3">
+                        <div className="text-xs font-bold text-on-surface">{r.team}</div>
+                        <div className="text-[10px] text-on-surface-variant">{r.workflow}</div>
+                      </td>
                       <td className="py-3 font-mono text-xs">{r.provider}/{r.model}</td>
                       <td className="py-3 text-right font-mono">${r.cost.toFixed(4)}</td>
                       <td className="py-3">

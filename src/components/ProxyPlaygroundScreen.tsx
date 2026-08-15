@@ -2,14 +2,19 @@ import React, { useState } from 'react';
 import { useAppState } from '../context/StateContext';
 
 export const ProxyPlaygroundScreen: React.FC = () => {
-  const { providers, routeGatewayRequest, apiKeys } = useAppState();
+  const { providers, routeGatewayRequest, apiKeys, authSession, users } = useAppState();
+
+  const userEmail = authSession?.email?.toLowerCase() || '';
+  const userRecord = users.find(u => u.email.toLowerCase() === userEmail);
+  const accountDisplayName = userRecord?.name || userEmail || 'aswini m (ammu2406sm@gmail.com)';
+
   const [prompt, setPrompt] = useState('Process workflow tasks for Support Chatbot');
-  const [provider, setProvider] = useState('openai');
-  const [model, setModel] = useState('gpt-4o');
+  const [provider, setProvider] = useState('gemini');
+  const [model, setModel] = useState('gemini-1.5-flash');
   const [team, setTeam] = useState('Engineering');
   const [environment, setEnvironment] = useState('production');
   const [workflow, setWorkflow] = useState('CI/CD Review');
-  const [customer, setCustomer] = useState('Alphabet Corp');
+  const [customer, setCustomer] = useState(accountDisplayName);
   const [gatewayMode, setGatewayMode] = useState<'simulation' | 'live'>('simulation');
   const [selectedKey, setSelectedKey] = useState<string>('');
   const [trace, setTrace] = useState<string[]>([]);
@@ -30,18 +35,16 @@ export const ProxyPlaygroundScreen: React.FC = () => {
         const startMs = performance.now();
         const traceLog: string[] = [
           `[SYSTEM] Live Gateway activated — Peek local policy enforcement layer`,
-          `[GATEWAY] Headers: X-Peek-Team=${team}, X-Peek-Workflow=${workflow}, X-Peek-Customer=${customer}`,
+          `[GATEWAY] Headers: X-Peek-Team=${team}, X-Peek-Workflow=${workflow}, X-Peek-Customer=${customer || accountDisplayName}`,
           `[GATEWAY] Auth Token: ${selectedKey ? 'pk_live_' + selectedKey.substring(0, 8) + '...' : 'Public Demo Mode'}`,
           `[POLICY] Running live PII scan and model restriction checks...`
         ];
 
-        // Run the same governance logic as simulation (applies real policies from state)
-        const response = await routeGatewayRequest(prompt, provider, model, team, environment, workflow, customer);
-
+        // Run governance logic & store telemetry log
+        const response = await routeGatewayRequest(prompt, provider, model, team, environment, workflow, customer || accountDisplayName);
         const latencyMs = ((performance.now() - startMs) / 1000).toFixed(2);
 
         if (!response.success) {
-          // Policy blocked
           response.trace.forEach(t => traceLog.push(t.replace('[', '[LIVE] [').replace('[[LIVE] [', '[LIVE] [')));
           traceLog.push(`[BLOCK] Request terminated by Peek live gateway after ${latencyMs}s`);
           setTrace(traceLog);
@@ -53,7 +56,6 @@ export const ProxyPlaygroundScreen: React.FC = () => {
             responseText: `Live Gateway Blocked: ${response.trace.find(t => t.includes('[BLOCK]') || t.includes('[WARNING]')) || 'Policy violation detected'}`
           });
         } else {
-          // Check if provider has a real API key configured
           const providerConfig = providers.find(p => p.id === provider);
           const hasRealKey = providerConfig?.apiKey && !providerConfig.apiKey.includes('••••') && providerConfig.apiKey.length > 10;
 
@@ -61,7 +63,6 @@ export const ProxyPlaygroundScreen: React.FC = () => {
           traceLog.push(`[PROXY] Routing to upstream: ${provider}/${model}`);
 
           if (hasRealKey && provider === 'openai') {
-            // Real API call to OpenAI
             traceLog.push(`[PROXY] Sending authenticated request to OpenAI API...`);
             try {
               const apiRes = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -78,7 +79,7 @@ export const ProxyPlaygroundScreen: React.FC = () => {
                 const totalTokens = apiData.usage?.total_tokens || 0;
                 const elapsedSec = parseFloat(((performance.now() - startMs) / 1000).toFixed(2));
                 traceLog.push(`[PROXY] OpenAI responded in ${elapsedSec}s. tokens=${totalTokens}`);
-                traceLog.push(`[TELEMETRY] Live request recorded and persisted to Peek storage & database.`);
+                traceLog.push(`[TELEMETRY] Live request recorded and persisted for account: ${customer || accountDisplayName}`);
                 setTrace(traceLog);
                 setResult({ success: true, cost: response.cost, tokens: totalTokens, latency: elapsedSec, responseText: content });
               } else {
@@ -88,27 +89,84 @@ export const ProxyPlaygroundScreen: React.FC = () => {
                 setResult({ success: false, cost: 0, tokens: 0, latency: parseFloat(latencyMs), responseText: `API Error ${apiRes.status}: ${errText.substring(0, 200)}` });
               }
             } catch (fetchErr) {
-              traceLog.push(`[ERROR] Network error reaching provider: ${(fetchErr as Error).message}`);
+              traceLog.push(`[ERROR] Network error: ${(fetchErr as Error).message}`);
               setTrace(traceLog);
               setResult({ success: false, cost: 0, tokens: 0, latency: parseFloat(latencyMs), responseText: `Network error: ${(fetchErr as Error).message}` });
             }
+          } else if (hasRealKey && provider === 'gemini') {
+            traceLog.push(`[PROXY] Sending authenticated request to Google Gemini API...`);
+            try {
+              const apiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${providerConfig!.apiKey}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+              });
+              if (apiRes.ok) {
+                const apiData = await apiRes.json();
+                const content = apiData.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                const elapsedSec = parseFloat(((performance.now() - startMs) / 1000).toFixed(2));
+                traceLog.push(`[PROXY] Google Gemini API responded in ${elapsedSec}s.`);
+                traceLog.push(`[TELEMETRY] Live request recorded and persisted for account: ${customer || accountDisplayName}`);
+                setTrace(traceLog);
+                setResult({ success: true, cost: response.cost, tokens: response.tokens, latency: elapsedSec, responseText: content });
+              } else {
+                const errText = await apiRes.text();
+                traceLog.push(`[ERROR] Gemini API returned ${apiRes.status}: ${errText.substring(0, 100)}`);
+                setTrace(traceLog);
+                setResult({ success: false, cost: 0, tokens: 0, latency: parseFloat(latencyMs), responseText: `API Error ${apiRes.status}: ${errText.substring(0, 200)}` });
+              }
+            } catch (fetchErr) {
+              traceLog.push(`[ERROR] Network error contacting Gemini API: ${(fetchErr as Error).message}`);
+              setTrace(traceLog);
+              setResult({ success: false, cost: 0, tokens: 0, latency: parseFloat(latencyMs), responseText: `Network error: ${(fetchErr as Error).message}` });
+            }
+          } else if (provider === 'local') {
+            traceLog.push(`[PROXY] Attempting local inference connection to http://localhost:11434 (Ollama / Local Node)...`);
+            try {
+              const localRes = await fetch('http://localhost:11434/api/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model: 'llama3', prompt, stream: false })
+              });
+              if (localRes.ok) {
+                const localData = await localRes.json();
+                const elapsedSec = parseFloat(((performance.now() - startMs) / 1000).toFixed(2));
+                traceLog.push(`[PROXY] Local inference node responded in ${elapsedSec}s.`);
+                traceLog.push(`[TELEMETRY] Local execution recorded to Peek storage & database.`);
+                setTrace(traceLog);
+                setResult({ success: true, cost: 0, tokens: response.tokens, latency: elapsedSec, responseText: localData.response || 'Local model response received.' });
+              } else {
+                throw new Error(`Local endpoint HTTP ${localRes.status}`);
+              }
+            } catch {
+              traceLog.push(`[PROXY] Local node offline — fallback to governed local simulation.`);
+              traceLog.push(`[PROXY] Upstream responded in ${response.latency}s. Cost: $0.00 (Local)`);
+              traceLog.push(`[TELEMETRY] Request recorded to Peek dashboard telemetry (account: ${customer || accountDisplayName})`);
+              setTrace(traceLog);
+              setResult({
+                success: true,
+                cost: 0,
+                tokens: response.tokens,
+                latency: response.latency,
+                responseText: `[Gemini Locally / Local LLM Gateway] Governance passed. Task processed locally for ${customer || accountDisplayName}.`
+              });
+            }
           } else {
-            // No real API key — show realistic simulated live response
             traceLog.push(`[PROXY] Demo mode: No live API key configured for ${provider}. Returning governed simulation.`);
             traceLog.push(`[PROXY] Upstream responded in ${response.latency}s. Cost: $${response.cost.toFixed(5)}`);
-            traceLog.push(`[TELEMETRY] Request recorded and persisted to Peek storage & database (org: ${team})`);
+            traceLog.push(`[TELEMETRY] Request recorded and persisted to Peek storage & database (account: ${customer || accountDisplayName})`);
             setTrace(traceLog);
             setResult({
               success: true,
               cost: response.cost,
               tokens: response.tokens,
               latency: response.latency,
-              responseText: `[Live Gateway — Demo Mode] Governance passed. Add a real API key in Integrations → ${provider} to route to the live provider.`
+              responseText: `[Live Gateway — Demo Mode] Governance passed. Add a real API key in Integrations → ${provider} to route to live endpoint.`
             });
           }
         }
       } else {
-        const response = await routeGatewayRequest(prompt, provider, model, team, environment, workflow, customer);
+        const response = await routeGatewayRequest(prompt, provider, model, team, environment, workflow, customer || accountDisplayName);
         setTrace(response.trace);
         setResult({
           success: response.success,
@@ -116,7 +174,7 @@ export const ProxyPlaygroundScreen: React.FC = () => {
           tokens: response.tokens,
           latency: response.latency,
           responseText: response.success
-            ? `[Simulation Gateway Success] Response successfully generated via ${provider}/${model}. Governance scans passed.`
+            ? `[Simulation Gateway Success] Response generated via ${provider}/${model} for account ${customer || accountDisplayName}. Governance scans passed.`
             : `[Simulation Gateway Blocked] Request terminated by Peek Governance engine.`
         });
       }
@@ -199,7 +257,34 @@ export const ProxyPlaygroundScreen: React.FC = () => {
             Request Payload
           </h3>
           <div>
-            <label className="block text-xs font-bold text-on-surface-variant uppercase mb-1">Prompt</label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-bold text-on-surface-variant uppercase">Prompt / Dev Task</label>
+              <span className="text-[10px] text-primary font-mono font-bold">Quick Presets:</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {[
+                { label: '💻 Cursor Code Refactor', prompt: 'Refactor authentication middleware in TypeScript to support JWT claims and RBAC', workflow: 'Cursor IDE Refactoring' },
+                { label: '🐍 Python SDK Test Gen', prompt: 'Write comprehensive pytest suite for billing calculation engine', workflow: 'Python SDK Test Generation' },
+                { label: '🦙 Local Ollama Node', prompt: 'Analyze database schema for performance bottlenecks and index optimization', workflow: 'Local LLM Inference', provider: 'local', model: 'llama-3-local' },
+                { label: '🚀 API Schema Gen', prompt: 'Generate OpenAPI 3.0 specification for payment gateway proxy endpoints', workflow: 'Node.js SDK Building' },
+              ].map((preset) => (
+                <button
+                  key={preset.label}
+                  type="button"
+                  onClick={() => {
+                    setPrompt(preset.prompt);
+                    setWorkflow(preset.workflow);
+                    if (preset.provider) {
+                      setProvider(preset.provider);
+                      if (preset.model) setModel(preset.model);
+                    }
+                  }}
+                  className="px-2.5 py-1 bg-surface-container hover:bg-surface-variant text-[11px] font-bold text-on-surface rounded-md border border-outline-variant/40 transition-all text-left"
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
             <textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
