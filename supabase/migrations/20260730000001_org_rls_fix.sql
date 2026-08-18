@@ -102,14 +102,31 @@ ALTER TABLE public.users ADD COLUMN IF NOT EXISTS org_id text DEFAULT 'org-defau
 -- Helper function to get current user's organization ID from auth JWT or users table
 CREATE OR REPLACE FUNCTION public.get_my_org_id()
 RETURNS text
-LANGUAGE sql STABLE SECURITY DEFINER
+LANGUAGE plpgsql STABLE SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
-  SELECT COALESCE(
-    (nullif(current_setting('request.jwt.claims', true), '')::jsonb -> 'user_metadata' ->> 'org_id'),
-    (SELECT org_id FROM public.users WHERE id = auth.uid()::text LIMIT 1),
-    'org-default'
-  );
+DECLARE
+  v_uid text;
+  v_org_id text;
+BEGIN
+  -- Safely cast uuid -> text before any comparison
+  v_uid := CAST(auth.uid() AS text);
+
+  -- 1. Try JWT claim first
+  v_org_id := nullif(current_setting('request.jwt.claims', true), '')::jsonb
+                -> 'user_metadata' ->> 'org_id';
+
+  -- 2. Fall back to users table lookup
+  IF v_org_id IS NULL AND v_uid IS NOT NULL THEN
+    SELECT u.org_id INTO v_org_id
+    FROM public.users u
+    WHERE u.id = v_uid
+    LIMIT 1;
+  END IF;
+
+  -- 3. Final fallback
+  RETURN COALESCE(v_org_id, 'org-default');
+END;
 $$;
 
 -- Drop old policies
@@ -133,8 +150,10 @@ DROP POLICY IF EXISTS "Allow public read" ON public.users;
 DROP POLICY IF EXISTS "Allow public write" ON public.users;
 
 -- Create tenant-isolated policies
-CREATE POLICY "org_select" ON public.organizations FOR SELECT USING (id = public.get_my_org_id());
-CREATE POLICY "org_all" ON public.organizations FOR ALL USING (id = public.get_my_org_id()) WITH CHECK (id = public.get_my_org_id());
+-- NOTE: id::text cast handles the case where the live DB has organizations.id as uuid
+-- (created via Studio) while get_my_org_id() returns text.
+CREATE POLICY "org_select" ON public.organizations FOR SELECT USING (id::text = public.get_my_org_id());
+CREATE POLICY "org_all" ON public.organizations FOR ALL USING (id::text = public.get_my_org_id()) WITH CHECK (id::text = public.get_my_org_id());
 
 CREATE POLICY "providers_select" ON public.providers FOR SELECT USING (org_id = public.get_my_org_id());
 CREATE POLICY "providers_all" ON public.providers FOR ALL USING (org_id = public.get_my_org_id()) WITH CHECK (org_id = public.get_my_org_id());
