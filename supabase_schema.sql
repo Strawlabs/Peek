@@ -125,8 +125,9 @@ as $$
 $$;
 
 -- 3. Create Tenant Isolation RLS Policies
-create policy "org_select" on public.organizations for select using (id = public.get_my_org_id());
-create policy "org_all" on public.organizations for all using (id = public.get_my_org_id()) with check (id = public.get_my_org_id());
+-- NOTE: id::text cast handles the case where the live DB has organizations.id as uuid
+create policy "org_select" on public.organizations for select using (id::text = public.get_my_org_id());
+create policy "org_all" on public.organizations for all using (id::text = public.get_my_org_id()) with check (id::text = public.get_my_org_id());
 
 create policy "providers_select" on public.providers for select using (org_id = public.get_my_org_id());
 create policy "providers_all" on public.providers for all using (org_id = public.get_my_org_id()) with check (org_id = public.get_my_org_id());

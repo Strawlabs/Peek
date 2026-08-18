@@ -150,8 +150,10 @@ DROP POLICY IF EXISTS "Allow public read" ON public.users;
 DROP POLICY IF EXISTS "Allow public write" ON public.users;
 
 -- Create tenant-isolated policies
-CREATE POLICY "org_select" ON public.organizations FOR SELECT USING (id = public.get_my_org_id());
-CREATE POLICY "org_all" ON public.organizations FOR ALL USING (id = public.get_my_org_id()) WITH CHECK (id = public.get_my_org_id());
+-- NOTE: id::text cast handles the case where the live DB has organizations.id as uuid
+-- (created via Studio) while get_my_org_id() returns text.
+CREATE POLICY "org_select" ON public.organizations FOR SELECT USING (id::text = public.get_my_org_id());
+CREATE POLICY "org_all" ON public.organizations FOR ALL USING (id::text = public.get_my_org_id()) WITH CHECK (id::text = public.get_my_org_id());
 
 CREATE POLICY "providers_select" ON public.providers FOR SELECT USING (org_id = public.get_my_org_id());
 CREATE POLICY "providers_all" ON public.providers FOR ALL USING (org_id = public.get_my_org_id()) WITH CHECK (org_id = public.get_my_org_id());
